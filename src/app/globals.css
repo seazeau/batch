@@ -1,0 +1,51 @@
+@import "tailwindcss" source(none);
+@source "..";
+
+:root {
+  --bg-page: #F8F9FA;
+  --bg-card: #FFFFFF;
+  --ink-primary: #0F172A;
+  --ink-secondary: #475569;
+  --ink-muted: #94A3B8;
+  --accent: #FF5A36;
+  --accent-soft: #FFF1EE;
+  --mint: #059669;
+  --mint-soft: #ECFDF5;
+  --border-subtle: #E2E8F0;
+}
+
+@theme inline {
+  --color-background: var(--bg-page);
+  --color-foreground: var(--ink-primary);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-editorial);
+}
+
+body {
+  background-color: var(--bg-page);
+  color: var(--ink-primary);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-mono-tabular {
+  font-family: var(--font-mono), monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.tap-scale {
+  transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.4, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+.tap-scale:active {
+  transform: scale(0.97);
+}
