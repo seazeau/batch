@@ -90,7 +90,6 @@ interface DynamicBatchStep {
 export default function MacroBatchApp() {
   // Navigation & UI state
   const [tab, setTab] = useState<TabKey>("menu");
-  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState<boolean>(false);
   const [prepMode, setPrepMode] = useState<PrepSubMode>("batch");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -197,25 +196,10 @@ export default function MacroBatchApp() {
         if (parsed.checkedGroceries) setCheckedGroceries(parsed.checkedGroceries);
         if (parsed.doneSteps) setDoneSteps(parsed.doneSteps);
       }
-      if (!localStorage.getItem("macrobatch_onboarded_v1")) {
-        setShowOnboarding(true);
-      }
     } catch {
       // Ignore storage errors
     }
   }, []);
-
-  const completeOnboarding = (launchScanner: boolean) => {
-    try {
-      localStorage.setItem("macrobatch_onboarded_v1", "1");
-    } catch {
-      // Ignore storage errors
-    }
-    setShowOnboarding(false);
-    if (launchScanner) {
-      openScannerModal("frigo");
-    }
-  };
 
   // Persist state changes
   useEffect(() => {
@@ -1007,24 +991,24 @@ export default function MacroBatchApp() {
   const doneStepsCount = dynamicBatchTimeline.filter((s) => doneSteps[s.stepNumber]).length;
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-[#0F172A] pb-28">
+    <div className="min-h-screen bg-[#FAF8F5] text-[#1C1917] pb-28">
       {/* Subtle Toast */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-[#0F172A] text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-[#1C1917] text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
           {toast}
         </div>
       )}
 
       {/* Mobile-First App Container */}
-      <div className="max-w-[440px] mx-auto min-h-screen bg-[#F8F9FA] relative">
-        {/* Minimalist Sticky Header */}
-        <header className="sticky top-0 z-30 bg-[#F8F9FA]/95 backdrop-blur-md border-b border-slate-200/60 px-4 py-3 flex items-center justify-between">
+      <div className="max-w-[440px] mx-auto min-h-screen bg-[#FAF8F5] relative">
+        {/* Warm Minimalist Sticky Header */}
+        <header className="sticky top-0 z-30 bg-[#FAF8F5]/95 backdrop-blur-md border-b border-[#EDE8E0] px-4 py-3 flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-extrabold tracking-tight leading-none text-[#0F172A]">
+            <h1 className="font-serif text-xl font-bold tracking-tight leading-none text-[#1C1917]">
               MacroBatch
             </h1>
-            <p className="text-xs font-medium text-slate-500 mt-0.5">
-              {totalWeeklyPortions} portions cette semaine
+            <p className="text-xs font-medium text-[#78716C] mt-0.5">
+              {totalWeeklyPortions} portions • ~{avgCostPerMeal.toFixed(2).replace(".", ",")} € / repas
             </p>
           </div>
 
@@ -1032,9 +1016,9 @@ export default function MacroBatchApp() {
             <button
               type="button"
               onClick={() => openScannerModal("frigo")}
-              className="tap-scale h-9 px-3 rounded-full bg-white border border-slate-200 flex items-center gap-1.5 text-xs font-bold text-[#0F172A] cursor-pointer shadow-2xs"
+              className="tap-scale h-9 px-3.5 rounded-full bg-[#FF5A36] text-white flex items-center gap-1.5 text-xs font-bold cursor-pointer shadow-xs"
             >
-              <Camera className="w-3.5 h-3.5 text-[#FF5A36]" />
+              <Camera className="w-3.5 h-3.5" />
               <span>{totalStockCount > 0 ? `Frigo (${totalStockCount})` : "Scanner"}</span>
             </button>
 
@@ -1042,7 +1026,7 @@ export default function MacroBatchApp() {
               type="button"
               onClick={() => setIsSettingsOpen(true)}
               aria-label="Préférences"
-              className="tap-scale w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer shadow-2xs"
+              className="tap-scale w-9 h-9 rounded-full bg-white border border-[#E7E2DA] flex items-center justify-center text-[#1C1917] hover:bg-stone-50 cursor-pointer"
             >
               <SlidersHorizontal className="w-4 h-4" />
             </button>
@@ -1050,67 +1034,11 @@ export default function MacroBatchApp() {
         </header>
 
         {/* ================================================================
-            TAB 1: SEMAINE (ACCUEIL ÉPURÉ ÉTAPE 1/3)
+            TAB 1: SEMAINE (STYLE JOW / FRICHTI — LUMINEUX & GOURMAND)
             ================================================================ */}
         {tab === "menu" && (
-          <main className="px-4 pt-4 space-y-4">
-            {/* Step-by-step Hero Card */}
-            <section className="bg-[#0F172A] text-white rounded-3xl p-5 space-y-4 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#FF5A36] block">
-                    Étape 1 sur 3 • Menu
-                  </span>
-                  <h2 className="text-xl font-extrabold mt-0.5 leading-tight">
-                    Ta semaine est prête
-                  </h2>
-                </div>
-                {hasCustomDayPeople && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSlotPeopleCounts([null, null, null, null, null]);
-                      showToast(`Tous les jours remis à ${peopleCount} pers.`);
-                    }}
-                    className="text-[11px] font-bold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-full text-white cursor-pointer shrink-0"
-                  >
-                    Remettre à {peopleCount}P
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-white/10 text-center">
-                <div>
-                  <strong className="text-base font-extrabold text-white font-mono-tabular block">
-                    {totalWeeklyPortions}
-                  </strong>
-                  <span className="text-[11px] text-slate-400">portions</span>
-                </div>
-                <div>
-                  <strong className="text-base font-extrabold text-[#34D399] font-mono-tabular block">
-                    {avgCostPerMeal.toFixed(2).replace(".", ",")} €
-                  </strong>
-                  <span className="text-[11px] text-slate-400">par repas</span>
-                </div>
-                <div>
-                  <strong className="text-base font-extrabold text-[#FF5A36] font-mono-tabular block">
-                    {totalBatchMinutes} min
-                  </strong>
-                  <span className="text-[11px] text-slate-400">de cuisine</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setTab("cart")}
-                className="tap-scale w-full py-3 rounded-2xl bg-[#FF5A36] hover:bg-[#e84f2e] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span>Voir ma liste de courses</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </section>
-
-            {/* Prominent Scan Frigo & Placard Card */}
+          <main className="px-4 pt-4 space-y-5">
+            {/* Scan Frigo & Placard Card */}
             {totalStockCount > 0 ? (
               <div className="bg-[#ECFDF5] border border-[#059669]/25 rounded-3xl p-3.5 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -1119,10 +1047,10 @@ export default function MacroBatchApp() {
                   </div>
                   <div className="min-w-0">
                     <strong className="text-xs font-extrabold text-[#065F46] block truncate">
-                      {totalStockCount} ingrédient{totalStockCount > 1 ? "s" : ""} scanné{totalStockCount > 1 ? "s" : ""}
+                      {totalStockCount} ingrédient{totalStockCount > 1 ? "s" : ""} du frigo utilisé{totalStockCount > 1 ? "s" : ""}
                     </strong>
                     <span className="text-[11px] text-[#059669] block truncate">
-                      Déduits des courses & priorisés
+                      Déduits automatiquement des courses
                     </span>
                   </div>
                 </div>
@@ -1130,7 +1058,7 @@ export default function MacroBatchApp() {
                   <button
                     type="button"
                     onClick={() => openScannerModal("frigo")}
-                    className="tap-scale px-3 py-1.5 rounded-xl bg-white text-[#065F46] text-xs font-bold border border-[#059669]/20 cursor-pointer"
+                    className="tap-scale px-3 py-1.5 rounded-full bg-white text-[#065F46] text-xs font-bold border border-[#059669]/20 cursor-pointer"
                   >
                     Modifier
                   </button>
@@ -1143,7 +1071,7 @@ export default function MacroBatchApp() {
                       setVisionSummary(null);
                       showToast("Stock réinitialisé");
                     }}
-                    className="tap-scale w-8 h-8 rounded-xl bg-white/70 text-slate-500 flex items-center justify-center cursor-pointer"
+                    className="tap-scale w-8 h-8 rounded-full bg-white/80 text-stone-500 flex items-center justify-center cursor-pointer"
                     aria-label="Effacer le stock"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -1154,68 +1082,81 @@ export default function MacroBatchApp() {
               <button
                 type="button"
                 onClick={() => openScannerModal("frigo")}
-                className="tap-scale w-full bg-white border border-slate-200/80 hover:border-[#FF5A36]/40 rounded-3xl p-3.5 flex items-center justify-between gap-3 text-left shadow-2xs cursor-pointer"
+                className="tap-scale w-full bg-white border border-[#EDE8E0] hover:border-[#FF5A36]/40 rounded-3xl p-3.5 flex items-center justify-between gap-3 text-left shadow-xs cursor-pointer"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-11 h-11 rounded-2xl bg-[#FFF1EE] text-[#FF5A36] flex items-center justify-center shrink-0">
                     <Camera className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <strong className="text-sm font-extrabold text-[#0F172A] block">
-                      Scanner mon frigo & placard
+                    <strong className="text-sm font-bold text-[#1C1917] block">
+                      Cuisiner avec ton frigo
                     </strong>
-                    <span className="text-xs text-slate-500 block truncate">
-                      Photo IA ou micro pour adapter le menu
+                    <span className="text-xs text-[#78716C] block truncate">
+                      Prends une photo, on adapte ton menu
                     </span>
                   </div>
                 </div>
-                <span className="px-3 py-1.5 rounded-xl bg-[#0F172A] text-white text-xs font-bold shrink-0">
+                <span className="px-3.5 py-2 rounded-full bg-[#FFF1EE] text-[#FF5A36] text-xs font-bold shrink-0">
                   Scanner
                 </span>
               </button>
             )}
 
-            {/* Clean Day Cards */}
-            <div className="space-y-3">
+            {/* Section Title */}
+            <div className="flex items-center justify-between">
+              <h2 className="font-serif text-xl font-bold text-[#1C1917]">
+                Au menu cette semaine
+              </h2>
+              {hasCustomDayPeople && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSlotPeopleCounts([null, null, null, null, null]);
+                    showToast(`Tous les jours remis à ${peopleCount} pers.`);
+                  }}
+                  className="text-xs font-bold text-[#FF5A36] cursor-pointer"
+                >
+                  Remettre à {peopleCount}P
+                </button>
+              )}
+            </div>
+
+            {/* Large Photo-First Jow-Style Dish Cards */}
+            <div className="space-y-4">
               {activeDishes.map((dish, idx) => {
                 const stockUsed = getRecipeStockMatches(dish);
                 const dayPeople = effectiveSlotPeople[idx] ?? peopleCount;
                 const isCustomDay =
                   slotPeopleCounts[idx] !== null && slotPeopleCounts[idx] !== peopleCount;
                 return (
-                  <div
+                  <article
                     key={`${dish.id}-${idx}`}
                     onClick={() => setSelectedRecipe(dish)}
-                    className="bg-white rounded-3xl p-3.5 border border-slate-200/70 shadow-2xs space-y-3 cursor-pointer"
+                    className="bg-white rounded-3xl overflow-hidden border border-[#EDE8E0] shadow-xs cursor-pointer"
                   >
-                    <div className="flex items-center gap-3.5">
+                    <div className="relative aspect-[16/9] bg-stone-100">
                       <img
                         src={dish.image}
                         alt={dish.shortName}
-                        className="w-20 h-20 rounded-2xl object-cover shrink-0 bg-slate-100"
+                        loading={idx > 1 ? "lazy" : "eager"}
+                        className="w-full h-full object-cover"
                       />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#FF5A36]">
-                            {DAYS_FULL[idx]}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-black/15 pointer-events-none" />
+                      <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                        <span className="bg-white/95 backdrop-blur-xs text-[#1C1917] text-xs font-extrabold px-3 py-1 rounded-full shadow-xs">
+                          {DAYS_FULL[idx]}
+                        </span>
+                        {isCustomDay && (
+                          <span className="bg-[#FF5A36] text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-xs">
+                            {dayPeople > peopleCount ? "Invités" : "Ajusté"}
                           </span>
-                          {isCustomDay && (
-                            <span className="text-[10px] font-bold bg-[#FFF1EE] text-[#FF5A36] px-2 py-0.5 rounded-full">
-                              {dayPeople > peopleCount ? "Invités" : "Ajusté"}
-                            </span>
-                          )}
-                          {stockUsed.length > 0 && (
-                            <span className="text-[10px] font-bold text-[#059669]">
-                              • Frigo
-                            </span>
-                          )}
-                        </div>
-                        <h3 className="text-base font-extrabold text-[#0F172A] truncate mt-0.5">
-                          {dish.shortName}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5 font-mono-tabular">
-                          {getDishProtein(dish)}g prot • {dish.cost[budgetTier].toFixed(2).replace(".", ",")} €
-                        </p>
+                        )}
+                        {stockUsed.length > 0 && (
+                          <span className="bg-[#059669] text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-xs">
+                            Frigo
+                          </span>
+                        )}
                       </div>
                       <button
                         type="button"
@@ -1224,48 +1165,63 @@ export default function MacroBatchApp() {
                           setSwapSlotIndex(idx);
                           setIsCatalogOpen(true);
                         }}
-                        className="tap-scale px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 shrink-0 cursor-pointer"
+                        className="tap-scale absolute top-3 right-3 bg-white/95 backdrop-blur-xs text-[#1C1917] text-xs font-bold px-3 py-1 rounded-full shadow-xs cursor-pointer"
                       >
                         Changer
                       </button>
                     </div>
 
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex items-center justify-between pt-2.5 border-t border-slate-100 text-xs"
-                    >
-                      <span className="text-slate-500 font-medium">
-                        Pour {dayPeople} pers.{" "}
-                        <span className="text-slate-400">({dayPeople * 2} portions)</span>
-                      </span>
-                      <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5">
+                    <div className="p-4 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="font-serif text-lg font-bold text-[#1C1917] truncate leading-snug">
+                          {dish.shortName}
+                        </h3>
+                        <p className="text-xs text-[#78716C] mt-0.5 font-mono-tabular">
+                          {getDishProtein(dish)}g prot • {dish.cost[budgetTier].toFixed(2).replace(".", ",")} € / part
+                        </p>
+                      </div>
+
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-1 bg-[#FAF8F5] border border-[#EDE8E0] rounded-full p-0.5 shrink-0"
+                      >
                         <button
                           type="button"
                           onClick={() => updateDayPeopleCount(idx, -1)}
                           disabled={dayPeople <= 1}
-                          className="tap-scale w-7 h-7 rounded-full bg-white text-[#0F172A] font-extrabold flex items-center justify-center shadow-2xs disabled:opacity-35 cursor-pointer"
+                          className="tap-scale w-7 h-7 rounded-full bg-white text-[#1C1917] font-extrabold flex items-center justify-center shadow-2xs disabled:opacity-35 cursor-pointer"
                           aria-label={`Réduire convives ${DAYS_FULL[idx]}`}
                         >
                           −
                         </button>
-                        <span className="min-w-[32px] text-center font-extrabold text-[#0F172A] font-mono-tabular">
+                        <span className="min-w-[30px] text-center text-xs font-extrabold text-[#1C1917] font-mono-tabular">
                           {dayPeople}P
                         </span>
                         <button
                           type="button"
                           onClick={() => updateDayPeopleCount(idx, 1)}
                           disabled={dayPeople >= 12}
-                          className="tap-scale w-7 h-7 rounded-full bg-white text-[#0F172A] font-extrabold flex items-center justify-center shadow-2xs disabled:opacity-35 cursor-pointer"
+                          className="tap-scale w-7 h-7 rounded-full bg-white text-[#1C1917] font-extrabold flex items-center justify-center shadow-2xs disabled:opacity-35 cursor-pointer"
                           aria-label={`Ajouter convives ${DAYS_FULL[idx]}`}
                         >
                           +
                         </button>
                       </div>
                     </div>
-                  </div>
+                  </article>
                 );
               })}
             </div>
+
+            {/* Warm Primary CTA at end of menu */}
+            <button
+              type="button"
+              onClick={() => setTab("cart")}
+              className="tap-scale w-full py-3.5 rounded-2xl bg-[#FF5A36] hover:bg-[#e84f2e] text-white text-sm font-extrabold flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+            >
+              <span>Faire mes courses ({Math.max(0, totalGroceryCount - totalCheckedCount)} articles)</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
           </main>
         )}
 
@@ -2442,124 +2398,12 @@ export default function MacroBatchApp() {
               </div>
             </div>
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSettingsOpen(false);
-                  setShowOnboarding(true);
-                }}
-                className="tap-scale px-4 py-3 bg-slate-100 text-slate-700 rounded-2xl text-xs font-bold cursor-pointer shrink-0"
-              >
-                Revoir l'intro
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsSettingsOpen(false)}
-                className="tap-scale flex-1 py-3 bg-[#0F172A] text-white rounded-2xl text-sm font-bold cursor-pointer"
-              >
-                Appliquer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================
-          FIRST-TIME ONBOARDING WELCOME SCREEN
-          ================================================================ */}
-      {showOnboarding && (
-        <div className="fixed inset-0 z-50 bg-[#0F172A] text-white flex flex-col justify-between p-6 pb-safe max-w-[440px] mx-auto overflow-y-auto">
-          <div className="space-y-6 pt-4">
-            <div className="inline-flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full text-xs font-bold text-[#FF5A36]">
-              <span>MacroBatch</span>
-              <span className="text-slate-300">•</span>
-              <span className="text-slate-200">Batch Cooking 1h20</span>
-            </div>
-
-            <div className="space-y-2">
-              <h2 className="text-3xl font-extrabold tracking-tight leading-tight">
-                Tes repas de la semaine prêts en 1h20.
-              </h2>
-              <p className="text-sm text-slate-300 leading-relaxed">
-                Moins de gaspillage, des courses optimisées par rayon et des plats riches en protéines.
-              </p>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              {[
-                {
-                  num: "1",
-                  title: "Scanne ton frigo (optionnel)",
-                  desc: "Prends une photo : on priorise tes restes et on les déduit des courses.",
-                },
-                {
-                  num: "2",
-                  title: "Ajuste tes 5 plats & invités",
-                  desc: "Change un plat ou ajoute des convives sur n’importe quel jour.",
-                },
-                {
-                  num: "3",
-                  title: "Fais tes courses & cuisine",
-                  desc: "Liste triée par rayon + étapes parallèles pour tout finir en ~1h20.",
-                },
-              ].map((step) => (
-                <div
-                  key={step.num}
-                  className="bg-white/5 border border-white/10 rounded-2xl p-3.5 flex items-start gap-3"
-                >
-                  <span className="w-7 h-7 rounded-full bg-[#FF5A36] text-white text-xs font-extrabold flex items-center justify-center shrink-0">
-                    {step.num}
-                  </span>
-                  <div>
-                    <strong className="text-sm font-bold block">{step.title}</strong>
-                    <span className="text-xs text-slate-400 leading-snug block mt-0.5">
-                      {step.desc}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-2 pt-1">
-              <span className="text-xs font-bold text-slate-300 block">
-                Pour combien de personnes d’habitude ?
-              </span>
-              <div className="grid grid-cols-3 gap-2">
-                {[1, 2, 4].map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPeopleCount(p)}
-                    className={`tap-scale py-2.5 rounded-xl text-xs font-bold border cursor-pointer ${
-                      peopleCount === p
-                        ? "bg-white text-[#0F172A] border-white"
-                        : "bg-white/5 text-slate-300 border-white/15"
-                    }`}
-                  >
-                    {p} {p > 1 ? "personnes" : "personne"}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-2.5 pt-6">
             <button
               type="button"
-              onClick={() => completeOnboarding(true)}
-              className="tap-scale w-full py-3.5 rounded-2xl bg-[#FF5A36] hover:bg-[#e84f2e] text-white text-sm font-extrabold flex items-center justify-center gap-2 cursor-pointer"
+              onClick={() => setIsSettingsOpen(false)}
+              className="tap-scale w-full py-3 bg-[#1C1917] text-white rounded-2xl text-sm font-bold cursor-pointer"
             >
-              <Camera className="w-4 h-4" />
-              <span>Scanner mon frigo maintenant</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => completeOnboarding(false)}
-              className="tap-scale w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span>Passer et voir mon menu</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              Appliquer
             </button>
           </div>
         </div>
