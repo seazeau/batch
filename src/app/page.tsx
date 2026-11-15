@@ -1094,17 +1094,27 @@ export default function MacroBatchApp() {
               </button>
             </section>
 
-            {/* Optional Active Stock Pill */}
-            {totalStockCount > 0 && (
-              <div className="bg-[#ECFDF5] border border-[#059669]/20 rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-2">
-                <span className="text-xs font-bold text-[#065F46] truncate">
-                  {totalStockCount} ingrédient{totalStockCount > 1 ? "s" : ""} du frigo déduit{totalStockCount > 1 ? "s" : ""}
-                </span>
-                <div className="flex items-center gap-2 shrink-0">
+            {/* Prominent Scan Frigo & Placard Card */}
+            {totalStockCount > 0 ? (
+              <div className="bg-[#ECFDF5] border border-[#059669]/25 rounded-3xl p-3.5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl bg-[#059669] text-white flex items-center justify-center shrink-0">
+                    <Camera className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <strong className="text-xs font-extrabold text-[#065F46] block truncate">
+                      {totalStockCount} ingrédient{totalStockCount > 1 ? "s" : ""} scanné{totalStockCount > 1 ? "s" : ""}
+                    </strong>
+                    <span className="text-[11px] text-[#059669] block truncate">
+                      Déduits des courses & priorisés
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => openScannerModal("frigo")}
-                    className="text-xs font-bold text-[#059669] cursor-pointer"
+                    className="tap-scale px-3 py-1.5 rounded-xl bg-white text-[#065F46] text-xs font-bold border border-[#059669]/20 cursor-pointer"
                   >
                     Modifier
                   </button>
@@ -1117,12 +1127,36 @@ export default function MacroBatchApp() {
                       setVisionSummary(null);
                       showToast("Stock réinitialisé");
                     }}
-                    className="text-xs font-bold text-slate-500 cursor-pointer"
+                    className="tap-scale w-8 h-8 rounded-xl bg-white/70 text-slate-500 flex items-center justify-center cursor-pointer"
+                    aria-label="Effacer le stock"
                   >
-                    Effacer
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openScannerModal("frigo")}
+                className="tap-scale w-full bg-white border border-slate-200/80 hover:border-[#FF5A36]/40 rounded-3xl p-3.5 flex items-center justify-between gap-3 text-left shadow-2xs cursor-pointer"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-2xl bg-[#FFF1EE] text-[#FF5A36] flex items-center justify-center shrink-0">
+                    <Camera className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <strong className="text-sm font-extrabold text-[#0F172A] block">
+                      Scanner mon frigo & placard
+                    </strong>
+                    <span className="text-xs text-slate-500 block truncate">
+                      Photo IA ou micro pour adapter le menu
+                    </span>
+                  </div>
+                </div>
+                <span className="px-3 py-1.5 rounded-xl bg-[#0F172A] text-white text-xs font-bold shrink-0">
+                  Scanner
+                </span>
+              </button>
             )}
 
             {/* Clean Day Cards */}
