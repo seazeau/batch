@@ -570,73 +570,86 @@ export default function MacroBatchApp() {
   };
 
   // Compress image on canvas & extract RGB color ratios for local fallback + fast Vision API upload
-  const processImageFile = (
+  const processImageFile = async (
     file: File
   ): Promise<{
     dataUrl: string;
     colorStats: { greenRatio: number; warmRatio: number; brightRatio: number; earthyRatio: number };
   }> => {
+    const drawSourceToCanvas = (source: CanvasImageSource, srcW: number, srcH: number) => {
+      const maxDim = 800;
+      let w = srcW;
+      let h = srcH;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) {
+          h = Math.round((h * maxDim) / w);
+          w = maxDim;
+        } else {
+          w = Math.round((w * maxDim) / h);
+          h = maxDim;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      let greenCount = 0;
+      let warmCount = 0;
+      let brightCount = 0;
+      let earthyCount = 0;
+      let totalSampled = 1;
+
+      if (ctx) {
+        ctx.drawImage(source, 0, 0, w, h);
+        try {
+          const imgData = ctx.getImageData(0, 0, w, h).data;
+          const step = 16;
+          totalSampled = 0;
+          for (let i = 0; i < imgData.length; i += 4 * step) {
+            const r = imgData[i];
+            const g = imgData[i + 1];
+            const b = imgData[i + 2];
+            totalSampled++;
+            if (g > r * 1.12 && g > b * 1.12 && g > 55) greenCount++;
+            if (r > g * 1.18 && r > b * 1.3 && r > 90) warmCount++;
+            if (r > 195 && g > 195 && b > 185) brightCount++;
+            if (r > 95 && g > 70 && b < 90 && Math.abs(r - g) < 55) earthyCount++;
+          }
+        } catch {
+          // Ignore pixel read error
+        }
+      }
+
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+      return {
+        dataUrl,
+        colorStats: {
+          greenRatio: Number((greenCount / Math.max(1, totalSampled)).toFixed(3)),
+          warmRatio: Number((warmCount / Math.max(1, totalSampled)).toFixed(3)),
+          brightRatio: Number((brightCount / Math.max(1, totalSampled)).toFixed(3)),
+          earthyRatio: Number((earthyCount / Math.max(1, totalSampled)).toFixed(3)),
+        },
+      };
+    };
+
+    if (typeof createImageBitmap === "function") {
+      try {
+        const bitmap = await createImageBitmap(file);
+        const result = drawSourceToCanvas(bitmap, bitmap.width, bitmap.height);
+        bitmap.close();
+        return result;
+      } catch {
+        // Fallback to FileReader + HTMLImageElement below
+      }
+    }
+
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onerror = () => reject(new Error("Erreur lecture fichier"));
       reader.onload = () => {
         const img = new window.Image();
         img.onerror = () => reject(new Error("Erreur chargement image"));
-        img.onload = () => {
-          const maxDim = 960;
-          let w = img.width;
-          let h = img.height;
-          if (w > maxDim || h > maxDim) {
-            if (w > h) {
-              h = Math.round((h * maxDim) / w);
-              w = maxDim;
-            } else {
-              w = Math.round((w * maxDim) / h);
-              h = maxDim;
-            }
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext("2d");
-          let greenCount = 0;
-          let warmCount = 0;
-          let brightCount = 0;
-          let earthyCount = 0;
-          let totalSampled = 1;
-
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, w, h);
-            try {
-              const imgData = ctx.getImageData(0, 0, w, h).data;
-              const step = 16;
-              totalSampled = 0;
-              for (let i = 0; i < imgData.length; i += 4 * step) {
-                const r = imgData[i];
-                const g = imgData[i + 1];
-                const b = imgData[i + 2];
-                totalSampled++;
-                if (g > r * 1.12 && g > b * 1.12 && g > 55) greenCount++;
-                if (r > g * 1.18 && r > b * 1.3 && r > 90) warmCount++;
-                if (r > 195 && g > 195 && b > 185) brightCount++;
-                if (r > 95 && g > 70 && b < 90 && Math.abs(r - g) < 55) earthyCount++;
-              }
-            } catch {
-              // Ignore pixel read error
-            }
-          }
-
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
-          resolve({
-            dataUrl,
-            colorStats: {
-              greenRatio: Number((greenCount / Math.max(1, totalSampled)).toFixed(3)),
-              warmRatio: Number((warmCount / Math.max(1, totalSampled)).toFixed(3)),
-              brightRatio: Number((brightCount / Math.max(1, totalSampled)).toFixed(3)),
-              earthyRatio: Number((earthyCount / Math.max(1, totalSampled)).toFixed(3)),
-            },
-          });
-        };
+        img.onload = () => resolve(drawSourceToCanvas(img, img.width, img.height));
         img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
@@ -683,11 +696,20 @@ export default function MacroBatchApp() {
           data.summary ||
             `${detectedIds.length + customItems.length} ingrédients identifiés sur la photo.`
         );
-        showToast("Photo analysée avec succès");
+        if (data.warning) {
+          showToast("IA indisponible — mode local utilisé");
+        } else {
+          showToast(
+            `${detectedIds.length + customItems.length} ingrédient(s) détecté(s)`
+          );
+        }
       } else {
-        showToast("Analyse locale appliquée");
+        const errData = await response.json().catch(() => ({}));
+        setVisionSummary(errData?.error || `Erreur serveur (${response.status})`);
+        showToast("Erreur lors de l'analyse IA");
       }
     } catch {
+      setVisionSummary("Impossible de lire cette photo. Réessayez avec une autre image.");
       showToast("Erreur lors du traitement de la photo");
     } finally {
       setIsAnalyzingPhoto(false);

@@ -1,5 +1,27 @@
 import { NextResponse } from 'next/server';
 
+export const maxDuration = 30;
+
+function parseModelJson(rawText: string): Record<string, unknown> | null {
+  const cleaned = rawText
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
 const PRESET_CATALOG = [
   { id: 'poulet', label: 'Filets de poulet', zone: 'fridge', keywords: ['poulet', 'dinde', 'volaille', 'chicken'] },
   { id: 'oeufs', label: 'Œufs frais', zone: 'fridge', keywords: ['oeuf', 'œuf', 'oeufs', 'egg'] },
@@ -62,99 +84,130 @@ export async function POST(request: Request) {
     ).trim();
 
     const systemPrompt = `Tu es un assistant culinaire expert en reconnaissance visuelle d'ingrédients dans un frigo ou un placard.
-Analyse cette photo (${zone === 'fridge' ? 'Frigo / Produits frais' : 'Placard / Épicerie sèche'}) et renvoie UNIQUEMENT un objet JSON valide avec la structure suivante :
+Observe attentivement toute la photo (${zone === 'fridge' ? 'Frigo / Produits frais' : 'Placard / Épicerie sèche'}), y compris les emballages, bocaux, légumes, viandes, produits laitiers et condiments visibles même partiellement.
+Renvoie UNIQUEMENT un objet JSON valide avec cette structure exacte :
 {
   "detectedPresetIds": ["id1", "id2"],
-  "customIngredients": ["nom court ingrédient 1", "nom court ingrédient 2"],
-  "summary": "Résumé court en français des aliments identifiés (max 90 caractères)"
+  "customIngredients": ["nom court 1", "nom court 2"],
+  "summary": "Résumé court en français des aliments identifiés (max 100 caractères)"
 }
 
-Voici la liste des IDs prédéfinis autorisés dans "detectedPresetIds" :
+Voici la liste des IDs prédéfinis autorisés dans "detectedPresetIds" (utilise ces IDs dès qu'un aliment correspond) :
 ${PRESET_CATALOG.map((p) => `- "${p.id}" (${p.label})`).join('\n')}
 
-Si tu vois d'autres ingrédients utiles en cuisine qui ne sont pas dans la liste prédéfinie (ex: "Saumon", "Poivron rouge", "Épinards", "Thon", "Pâtes", "Patate douce", "Fromage râpé"), ajoute-les en français au singulier dans "customIngredients" (maximum 5).`;
+Pour tous les autres aliments ou ingrédients visibles qui ne sont pas dans la liste ci-dessus (ex: "Saumon", "Poivron", "Épinards", "Thon", "Pâtes", "Beurre", "Lait", "Crème fraîche", "Jambon", "Pomme"), ajoute-les en français au singulier dans "customIngredients" (jusqu'à 15 ingrédients). Si la photo est floue ou vide, renvoie des tableaux vides et explique-le dans "summary".`;
+
+    let aiError: string | null = null;
 
     // 1. Try OpenAI Vision if key starts with sk-
     if (resolvedKey.startsWith('sk-')) {
-      const openAiRes = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${resolvedKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          response_format: { type: 'json_object' },
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: systemPrompt },
-                {
-                  type: 'image_url',
-                  image_url: { url: `data:${mimeType};base64,${rawBase64}` },
-                },
-              ],
-            },
-          ],
-          max_tokens: 400,
-        }),
-      });
+      try {
+        const openAiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${resolvedKey}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            response_format: { type: 'json_object' },
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: systemPrompt },
+                  {
+                    type: 'image_url',
+                    image_url: { url: `data:${mimeType};base64,${rawBase64}` },
+                  },
+                ],
+              },
+            ],
+            max_tokens: 600,
+          }),
+        });
 
-      if (openAiRes.ok) {
-        const data = await openAiRes.json();
-        const content = data?.choices?.[0]?.message?.content;
-        if (content) {
-          const parsed = JSON.parse(content);
-          return NextResponse.json({
-            mode: 'openai-vision',
-            detectedPresetIds: Array.isArray(parsed.detectedPresetIds) ? parsed.detectedPresetIds : [],
-            customIngredients: Array.isArray(parsed.customIngredients) ? parsed.customIngredients : [],
-            summary: parsed.summary || 'Analyse Vision OpenAI terminée.',
-          });
+        if (openAiRes.ok) {
+          const data = await openAiRes.json();
+          const content = data?.choices?.[0]?.message?.content;
+          const parsed = typeof content === 'string' ? parseModelJson(content) : null;
+          if (parsed) {
+            return NextResponse.json({
+              mode: 'openai-vision',
+              detectedPresetIds: Array.isArray(parsed.detectedPresetIds) ? parsed.detectedPresetIds : [],
+              customIngredients: Array.isArray(parsed.customIngredients) ? parsed.customIngredients : [],
+              summary: typeof parsed.summary === 'string' ? parsed.summary : 'Analyse Vision OpenAI terminée.',
+            });
+          }
+          aiError = 'Réponse OpenAI invalide.';
+        } else {
+          aiError = `OpenAI HTTP ${openAiRes.status}`;
         }
+      } catch (e) {
+        aiError = e instanceof Error ? e.message : 'Erreur réseau OpenAI';
       }
     }
 
     // 2. Try Google Gemini Vision API if a key is provided
     if (resolvedKey && !resolvedKey.startsWith('sk-')) {
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
-        resolvedKey
-      )}`;
-      const geminiRes = await fetch(geminiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: systemPrompt },
+      const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+      for (const model of geminiModels) {
+        try {
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
+            resolvedKey
+          )}`;
+          const generationConfig: Record<string, unknown> = {
+            response_mime_type: 'application/json',
+            temperature: 0.2,
+          };
+          if (model === 'gemini-2.5-flash') {
+            generationConfig.thinkingConfig = { thinkingBudget: 0 };
+          }
+
+          const geminiRes = await fetch(geminiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
                 {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: rawBase64,
-                  },
+                  parts: [
+                    { text: systemPrompt },
+                    {
+                      inline_data: {
+                        mime_type: mimeType,
+                        data: rawBase64,
+                      },
+                    },
+                  ],
                 },
               ],
-            },
-          ],
-          generationConfig: {
-            response_mime_type: 'application/json',
-          },
-        }),
-      });
-
-      if (geminiRes.ok) {
-        const data = await geminiRes.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          const parsed = JSON.parse(text);
-          return NextResponse.json({
-            mode: 'gemini-vision',
-            detectedPresetIds: Array.isArray(parsed.detectedPresetIds) ? parsed.detectedPresetIds : [],
-            customIngredients: Array.isArray(parsed.customIngredients) ? parsed.customIngredients : [],
-            summary: parsed.summary || 'Analyse Gemini Vision terminée.',
+              generationConfig,
+            }),
           });
+
+          if (geminiRes.ok) {
+            const data = await geminiRes.json();
+            const parts: Array<{ text?: string; thought?: boolean }> =
+              data?.candidates?.[0]?.content?.parts || [];
+            const textPart = parts.find((p) => typeof p.text === 'string' && !p.thought) || parts[0];
+            const text = textPart?.text;
+            const parsed = typeof text === 'string' ? parseModelJson(text) : null;
+            if (parsed) {
+              return NextResponse.json({
+                mode: 'gemini-vision',
+                model,
+                detectedPresetIds: Array.isArray(parsed.detectedPresetIds) ? parsed.detectedPresetIds : [],
+                customIngredients: Array.isArray(parsed.customIngredients) ? parsed.customIngredients : [],
+                summary: typeof parsed.summary === 'string' ? parsed.summary : 'Analyse Gemini Vision terminée.',
+              });
+            }
+            aiError = `Réponse JSON Gemini (${model}) illisible.`;
+          } else {
+            const errBody = await geminiRes.text().catch(() => '');
+            aiError = `Gemini (${model}) HTTP ${geminiRes.status}${errBody ? `: ${errBody.slice(0, 140)}` : ''}`;
+          }
+        } catch (e) {
+          aiError = e instanceof Error ? e.message : `Erreur réseau Gemini (${model})`;
         }
       }
     }
@@ -205,12 +258,14 @@ Si tu vois d'autres ingrédients utiles en cuisine qui ne sont pas dans la liste
 
     return NextResponse.json({
       mode: 'local-vision',
-      detectedPresetIds: Array.from(new Set(detectedPresetIds)),
+      warning: aiError || (!resolvedKey ? 'Aucune clé GEMINI_API_KEY configurée sur le serveur.' : null),
+      detectedPresetIds: Array.isArray(detectedPresetIds) ? Array.from(new Set(detectedPresetIds)) : [],
       customIngredients,
-      summary:
-        zone === 'fridge'
-          ? 'Analyse visuelle locale du frigo effectuée (vérifiez ou ajustez les éléments détectés).'
-          : 'Analyse visuelle locale du placard effectuée (vérifiez ou ajustez les éléments détectés).',
+      summary: aiError
+        ? `IA indisponible (${aiError}) — mode local appliqué.`
+        : zone === 'fridge'
+        ? 'Analyse visuelle locale du frigo effectuée (vérifiez ou ajustez les éléments détectés).'
+        : 'Analyse visuelle locale du placard effectuée (vérifiez ou ajustez les éléments détectés).',
     });
   } catch (err) {
     console.error('Error in /api/scan-stock:', err);
