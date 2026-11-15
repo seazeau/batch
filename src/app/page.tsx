@@ -90,6 +90,7 @@ interface DynamicBatchStep {
 export default function MacroBatchApp() {
   // Navigation & UI state
   const [tab, setTab] = useState<TabKey>("menu");
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState<boolean>(false);
   const [prepMode, setPrepMode] = useState<PrepSubMode>("batch");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -196,10 +197,25 @@ export default function MacroBatchApp() {
         if (parsed.checkedGroceries) setCheckedGroceries(parsed.checkedGroceries);
         if (parsed.doneSteps) setDoneSteps(parsed.doneSteps);
       }
+      if (!localStorage.getItem("macrobatch_onboarded_v1")) {
+        setShowOnboarding(true);
+      }
     } catch {
       // Ignore storage errors
     }
   }, []);
+
+  const completeOnboarding = (launchScanner: boolean) => {
+    try {
+      localStorage.setItem("macrobatch_onboarded_v1", "1");
+    } catch {
+      // Ignore storage errors
+    }
+    setShowOnboarding(false);
+    if (launchScanner) {
+      openScannerModal("frigo");
+    }
+  };
 
   // Persist state changes
   useEffect(() => {
@@ -2426,12 +2442,124 @@ export default function MacroBatchApp() {
               </div>
             </div>
 
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  setShowOnboarding(true);
+                }}
+                className="tap-scale px-4 py-3 bg-slate-100 text-slate-700 rounded-2xl text-xs font-bold cursor-pointer shrink-0"
+              >
+                Revoir l'intro
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(false)}
+                className="tap-scale flex-1 py-3 bg-[#0F172A] text-white rounded-2xl text-sm font-bold cursor-pointer"
+              >
+                Appliquer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
+          FIRST-TIME ONBOARDING WELCOME SCREEN
+          ================================================================ */}
+      {showOnboarding && (
+        <div className="fixed inset-0 z-50 bg-[#0F172A] text-white flex flex-col justify-between p-6 pb-safe max-w-[440px] mx-auto overflow-y-auto">
+          <div className="space-y-6 pt-4">
+            <div className="inline-flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full text-xs font-bold text-[#FF5A36]">
+              <span>MacroBatch</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-slate-200">Batch Cooking 1h20</span>
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-3xl font-extrabold tracking-tight leading-tight">
+                Tes repas de la semaine prêts en 1h20.
+              </h2>
+              <p className="text-sm text-slate-300 leading-relaxed">
+                Moins de gaspillage, des courses optimisées par rayon et des plats riches en protéines.
+              </p>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              {[
+                {
+                  num: "1",
+                  title: "Scanne ton frigo (optionnel)",
+                  desc: "Prends une photo : on priorise tes restes et on les déduit des courses.",
+                },
+                {
+                  num: "2",
+                  title: "Ajuste tes 5 plats & invités",
+                  desc: "Change un plat ou ajoute des convives sur n’importe quel jour.",
+                },
+                {
+                  num: "3",
+                  title: "Fais tes courses & cuisine",
+                  desc: "Liste triée par rayon + étapes parallèles pour tout finir en ~1h20.",
+                },
+              ].map((step) => (
+                <div
+                  key={step.num}
+                  className="bg-white/5 border border-white/10 rounded-2xl p-3.5 flex items-start gap-3"
+                >
+                  <span className="w-7 h-7 rounded-full bg-[#FF5A36] text-white text-xs font-extrabold flex items-center justify-center shrink-0">
+                    {step.num}
+                  </span>
+                  <div>
+                    <strong className="text-sm font-bold block">{step.title}</strong>
+                    <span className="text-xs text-slate-400 leading-snug block mt-0.5">
+                      {step.desc}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <span className="text-xs font-bold text-slate-300 block">
+                Pour combien de personnes d’habitude ?
+              </span>
+              <div className="grid grid-cols-3 gap-2">
+                {[1, 2, 4].map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPeopleCount(p)}
+                    className={`tap-scale py-2.5 rounded-xl text-xs font-bold border cursor-pointer ${
+                      peopleCount === p
+                        ? "bg-white text-[#0F172A] border-white"
+                        : "bg-white/5 text-slate-300 border-white/15"
+                    }`}
+                  >
+                    {p} {p > 1 ? "personnes" : "personne"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2.5 pt-6">
             <button
               type="button"
-              onClick={() => setIsSettingsOpen(false)}
-              className="tap-scale w-full py-3 bg-[#0F172A] text-white rounded-2xl text-sm font-bold cursor-pointer"
+              onClick={() => completeOnboarding(true)}
+              className="tap-scale w-full py-3.5 rounded-2xl bg-[#FF5A36] hover:bg-[#e84f2e] text-white text-sm font-extrabold flex items-center justify-center gap-2 cursor-pointer"
             >
-              Appliquer
+              <Camera className="w-4 h-4" />
+              <span>Scanner mon frigo maintenant</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => completeOnboarding(false)}
+              className="tap-scale w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>Passer et voir mon menu</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
