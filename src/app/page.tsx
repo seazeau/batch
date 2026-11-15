@@ -121,10 +121,37 @@ export default function MacroBatchApp() {
 
   // User profile & preferences (tucked cleanly in settings)
   const [peopleCount, setPeopleCount] = useState<number>(2);
+  const [slotPeopleCounts, setSlotPeopleCounts] = useState<(number | null)[]>([
+    null,
+    null,
+    null,
+    null,
+    null,
+  ]);
   const [weightKg, setWeightKg] = useState<number>(72);
   const [protProfile, setProtProfile] = useState<ProtProfile>(130);
   const [diet, setDiet] = useState<DietMode>("omni");
   const [budgetTier, setBudgetTier] = useState<BudgetTier>("std");
+
+  const effectiveSlotPeople = useMemo(
+    () => slotPeopleCounts.map((v) => v ?? peopleCount),
+    [slotPeopleCounts, peopleCount]
+  );
+  const totalWeeklyPortions = useMemo(
+    () => effectiveSlotPeople.reduce((acc, p) => acc + p * 2, 0),
+    [effectiveSlotPeople]
+  );
+  const hasCustomDayPeople = slotPeopleCounts.some((v) => v !== null);
+
+  const updateDayPeopleCount = (dayIdx: number, delta: number) => {
+    setSlotPeopleCounts((prev) => {
+      const next = [...prev];
+      const current = next[dayIdx] ?? peopleCount;
+      const updated = Math.max(1, Math.min(12, current + delta));
+      next[dayIdx] = updated === peopleCount ? null : updated;
+      return next;
+    });
+  };
 
   // Catalog filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -151,6 +178,9 @@ export default function MacroBatchApp() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.peopleCount) setPeopleCount(parsed.peopleCount);
+        if (Array.isArray(parsed.slotPeopleCounts) && parsed.slotPeopleCounts.length === 5) {
+          setSlotPeopleCounts(parsed.slotPeopleCounts);
+        }
         if (parsed.weightKg) setWeightKg(parsed.weightKg);
         if (parsed.protProfile) setProtProfile(parsed.protProfile);
         if (parsed.diet) setDiet(parsed.diet);
@@ -176,6 +206,7 @@ export default function MacroBatchApp() {
         "macrobatch_v2_state",
         JSON.stringify({
           peopleCount,
+          slotPeopleCounts,
           weightKg,
           protProfile,
           diet,
@@ -193,6 +224,7 @@ export default function MacroBatchApp() {
     }
   }, [
     peopleCount,
+    slotPeopleCounts,
     weightKg,
     protProfile,
     diet,
@@ -301,7 +333,6 @@ export default function MacroBatchApp() {
   // DYNAMIC BATCH PREPARATION ENGINE (ADAPTED TO THE 5 SELECTED DISHES)
   // ================================================================
   const dynamicBatchTimeline = useMemo<DynamicBatchStep[]>(() => {
-    const portionsPerDish = peopleCount * 2;
     const steps: DynamicBatchStep[] = [];
 
     const ovenDishes = activeDishes.filter((d) => d.cookMethod === "four");
@@ -311,13 +342,15 @@ export default function MacroBatchApp() {
 
     const getGroupIngredients = (dishes: Recipe[], aisles: SupermarketAisle[]) => {
       const map = new Map<string, { name: string; qty: number; unit: string }>();
-      dishes.forEach((d) => {
+      activeDishes.forEach((d, dayIdx) => {
+        if (!dishes.includes(d)) return;
+        const dishPortions = (effectiveSlotPeople[dayIdx] ?? peopleCount) * 2;
         d.ingredients
           .filter((i) => aisles.includes(i.aisle) && !i.isPantry)
           .forEach((i) => {
             const prev = map.get(i.name);
-            if (prev) prev.qty += i.qty * portionsPerDish;
-            else map.set(i.name, { name: i.name, qty: i.qty * portionsPerDish, unit: i.unit });
+            if (prev) prev.qty += i.qty * dishPortions;
+            else map.set(i.name, { name: i.name, qty: i.qty * dishPortions, unit: i.unit });
           });
       });
       return Array.from(map.values()).map((x) => `${x.name} (${formatQty(x.qty, x.unit)})`);
@@ -416,21 +449,25 @@ export default function MacroBatchApp() {
 
     steps.push({
       stepNumber: steps.length + 1,
-      title: `Assemblage des ${peopleCount * 10} boîtes (Lundi à Vendredi)`,
+      title: `Assemblage des ${totalWeeklyPortions} boîtes (Lundi à Vendredi)`,
       station: "Dressage & Mise au frais",
       durationMin: 10,
       image: "/steps/step7_a.jpg",
-      dishBadges: activeDishes.map((d, idx) => `${DAYS_FULL[idx]} : ${d.shortName}`),
-      ingredientPills: [`${peopleCount * 2} boîtes / recette`, `${peopleCount * 10} repas au total`],
-      description: `Répartissez chaque recette en ${
-        peopleCount * 2
-      } portions égales : ${activeDishes
-        .map((d, i) => `${DAYS_SHORT[i]} (${d.shortName})`)
+      dishBadges: activeDishes.map(
+        (d, idx) =>
+          `${DAYS_FULL[idx]} (${(effectiveSlotPeople[idx] ?? peopleCount) * 2} port.) : ${d.shortName}`
+      ),
+      ingredientPills: [`${totalWeeklyPortions} repas au total`],
+      description: `Répartissez chaque recette selon vos convives : ${activeDishes
+        .map(
+          (d, i) =>
+            `${DAYS_SHORT[i]} ${d.shortName} (${(effectiveSlotPeople[i] ?? peopleCount) * 2} port.)`
+        )
         .join(" • ")}. Laissez tiédir 15 min avant de fermer les couvercles.`,
     });
 
     return steps;
-  }, [activeDishes, peopleCount]);
+  }, [activeDishes, peopleCount, effectiveSlotPeople, totalWeeklyPortions]);
 
   const totalBatchMinutes = useMemo(() => {
     return dynamicBatchTimeline.reduce((acc, s) => acc + s.durationMin, 0);
@@ -533,9 +570,8 @@ export default function MacroBatchApp() {
       { name: string; qty: number; unit: string; aisle: SupermarketAisle; isPantry: boolean }
     >();
 
-    const portionsPerDish = peopleCount * 2;
-
-    activeDishes.forEach((dish) => {
+    activeDishes.forEach((dish, dayIdx) => {
+      const portionsPerDish = (effectiveSlotPeople[dayIdx] ?? peopleCount) * 2;
       dish.ingredients.forEach((ing) => {
         if (deductPantry && ing.isPantry) return;
         const key = `${ing.aisle}__${ing.name}__${ing.unit}`;
@@ -561,7 +597,7 @@ export default function MacroBatchApp() {
         .sort((a, b) => a.name.localeCompare(b.name));
       return { aisle, label: AISLE_LABELS[aisle], items };
     }).filter((g) => g.items.length > 0);
-  }, [activeDishes, peopleCount, deductPantry]);
+  }, [activeDishes, peopleCount, effectiveSlotPeople, deductPantry]);
 
   // ================================================================
   // FRIDGE & PANTRY PHOTO SCANNER LOGIC (VISION AI + CATALOG PRIORITY + GROCERY DEDUCTION)
@@ -969,7 +1005,7 @@ export default function MacroBatchApp() {
               MacroBatch
             </h1>
             <p className="text-[11px] font-medium text-slate-500 mt-0.5">
-              {peopleCount * 10} repas • {weightKg} kg •{" "}
+              {totalWeeklyPortions} repas • {weightKg} kg •{" "}
               {budgetTier === "eco" ? "Malin" : budgetTier === "std" ? "Équilibré" : "Gourmet"}
             </p>
           </div>
@@ -1254,18 +1290,31 @@ export default function MacroBatchApp() {
         {tab === "menu" && (
           <main className="px-4 pt-3 space-y-4">
             <section className="bg-[#0F172A] text-white rounded-3xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div>
                   <span className="text-xs font-medium text-slate-400 block">
                     Synthèse de votre semaine
                   </span>
                   <h2 className="text-lg font-extrabold mt-0.5">
-                    {peopleCount * 10} portions programmées
+                    {totalWeeklyPortions} portions programmées
                   </h2>
                 </div>
-                <span className="text-xs font-bold bg-white/10 px-3 py-1 rounded-full text-slate-200">
-                  Cible {targetDailyProtG}g/j
-                </span>
+                {hasCustomDayPeople ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSlotPeopleCounts([null, null, null, null, null]);
+                      showToast(`Tous les jours remis à ${peopleCount} pers.`);
+                    }}
+                    className="text-[11px] font-bold bg-[#FF5A36] hover:bg-[#e84f2e] px-3 py-1.5 rounded-full text-white cursor-pointer shrink-0"
+                  >
+                    Tout remettre à {peopleCount}P
+                  </button>
+                ) : (
+                  <span className="text-xs font-bold bg-white/10 px-3 py-1 rounded-full text-slate-200">
+                    Cible {targetDailyProtG}g/j
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-3 gap-2 pt-3 border-t border-white/10 text-center">
@@ -1293,49 +1342,93 @@ export default function MacroBatchApp() {
             <div className="space-y-3">
               {activeDishes.map((dish, idx) => {
                 const stockUsed = getRecipeStockMatches(dish);
+                const dayPeople = effectiveSlotPeople[idx] ?? peopleCount;
+                const isCustomDay =
+                  slotPeopleCounts[idx] !== null && slotPeopleCounts[idx] !== peopleCount;
                 return (
                   <div
                     key={`${dish.id}-${idx}`}
                     onClick={() => setSelectedRecipe(dish)}
-                    className="bg-white rounded-2xl p-3 border border-slate-200/80 flex items-center gap-3 cursor-pointer"
+                    className="bg-white rounded-2xl p-3 border border-slate-200/80 space-y-2.5 cursor-pointer"
                   >
-                    <img
-                      src={dish.image}
-                      alt={dish.shortName}
-                      className="w-16 h-16 rounded-xl object-cover shrink-0 bg-slate-100"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#FF5A36]">
-                          {DAYS_FULL[idx]}
-                        </span>
-                        {stockUsed.length > 0 && (
-                          <span className="text-[10px] font-bold text-[#059669]">
-                            • {stockUsed.length} en stock
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={dish.image}
+                        alt={dish.shortName}
+                        className="w-16 h-16 rounded-xl object-cover shrink-0 bg-slate-100"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-[#FF5A36]">
+                            {DAYS_FULL[idx]}
                           </span>
-                        )}
+                          {isCustomDay && (
+                            <span className="text-[10px] font-bold bg-[#FFF1EE] text-[#FF5A36] px-2 py-0.5 rounded-full">
+                              {dayPeople > peopleCount ? "Invités" : "Ajusté"}
+                            </span>
+                          )}
+                          {stockUsed.length > 0 && (
+                            <span className="text-[10px] font-bold text-[#059669]">
+                              • {stockUsed.length} en stock
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-sm font-bold text-[#0F172A] truncate">
+                          {dish.shortName}
+                        </h3>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 font-mono-tabular">
+                          <span>{getDishProtein(dish)}g prot</span>
+                          <span>•</span>
+                          <span>{dish.cost[budgetTier].toFixed(2).replace(".", ",")} €</span>
+                        </div>
                       </div>
-                      <h3 className="text-sm font-bold text-[#0F172A] truncate">
-                        {dish.shortName}
-                      </h3>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 font-mono-tabular">
-                        <span>{getDishProtein(dish)}g prot</span>
-                        <span>•</span>
-                        <span>{dish.cost[budgetTier].toFixed(2).replace(".", ",")} €</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSwapSlotIndex(idx);
+                          setTab("catalog");
+                        }}
+                        className="tap-scale px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 shrink-0 cursor-pointer flex items-center gap-1"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Remplacer</span>
+                      </button>
+                    </div>
+
+                    {/* Per-day guest / portion stepper */}
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs"
+                    >
+                      <span className="text-slate-500 font-medium">
+                        Convives ce jour{" "}
+                        <span className="text-slate-400">({dayPeople * 2} portions)</span>
+                      </span>
+                      <div className="flex items-center gap-1.5 bg-slate-100 rounded-full p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => updateDayPeopleCount(idx, -1)}
+                          disabled={dayPeople <= 1}
+                          className="tap-scale w-7 h-7 rounded-full bg-white text-[#0F172A] font-extrabold flex items-center justify-center shadow-2xs disabled:opacity-35 cursor-pointer"
+                          aria-label={`Réduire convives ${DAYS_FULL[idx]}`}
+                        >
+                          −
+                        </button>
+                        <span className="min-w-[34px] text-center font-extrabold text-[#0F172A] font-mono-tabular">
+                          {dayPeople}P
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => updateDayPeopleCount(idx, 1)}
+                          disabled={dayPeople >= 12}
+                          className="tap-scale w-7 h-7 rounded-full bg-white text-[#0F172A] font-extrabold flex items-center justify-center shadow-2xs disabled:opacity-35 cursor-pointer"
+                          aria-label={`Ajouter convives ${DAYS_FULL[idx]}`}
+                        >
+                          +
+                        </button>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSwapSlotIndex(idx);
-                        setTab("catalog");
-                      }}
-                      className="tap-scale px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 shrink-0 cursor-pointer flex items-center gap-1"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      <span>Remplacer</span>
-                    </button>
                   </div>
                 );
               })}
@@ -1355,7 +1448,7 @@ export default function MacroBatchApp() {
                   Reste à acheter ({totalGroceryCount - totalCheckedCount})
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {totalCheckedCount} déjà en stock ou cochés • {peopleCount} pers.
+                  {totalCheckedCount} déjà en stock ou cochés • {totalWeeklyPortions} portions
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
@@ -1601,7 +1694,10 @@ export default function MacroBatchApp() {
               </div>
             ) : (
               <div className="space-y-4">
-                {activeDishes.map((dish, idx) => (
+                {activeDishes.map((dish, idx) => {
+                  const dayPeople = effectiveSlotPeople[idx] ?? peopleCount;
+                  const dayPortions = dayPeople * 2;
+                  return (
                   <article
                     key={`${dish.id}-${idx}`}
                     className="bg-white rounded-3xl overflow-hidden border border-slate-200/80"
@@ -1614,14 +1710,14 @@ export default function MacroBatchApp() {
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute top-3 left-3 bg-[#0F172A]/85 text-white text-xs font-bold px-2.5 py-1 rounded-full">
-                        {DAYS_FULL[idx]}
+                        {DAYS_FULL[idx]} • {dayPeople}P
                       </div>
                     </div>
 
                     <div className="p-4 space-y-3">
                       <div>
                         <span className="text-[11px] font-bold uppercase text-slate-400">
-                          {dish.cookMethodLabel} • {peopleCount * 2} portions
+                          {dish.cookMethodLabel} • {dayPortions} portions ({dayPeople} pers.)
                         </span>
                         <h3 className="text-base font-extrabold text-[#0F172A] mt-0.5">
                           {dish.name}
@@ -1636,7 +1732,7 @@ export default function MacroBatchApp() {
                           >
                             <span className="text-slate-700">{ing.name}</span>
                             <strong className="font-bold text-[#0F172A] font-mono-tabular">
-                              {formatQty(ing.qty * peopleCount * 2, ing.unit)}
+                              {formatQty(ing.qty * dayPortions, ing.unit)}
                             </strong>
                           </div>
                         ))}
@@ -1650,7 +1746,8 @@ export default function MacroBatchApp() {
                       </div>
                     </div>
                   </article>
-                ))}
+                  );
+                })}
               </div>
             )}
           </main>
