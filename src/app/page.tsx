@@ -22,10 +22,11 @@ import {
   Camera,
   Image as ImageIcon,
   Mic,
+  ArrowRight,
 } from "lucide-react";
 import { RECIPE_DATABASE, Recipe, SupermarketAisle } from "@/data/recipeDatabase";
 
-type TabKey = "catalog" | "menu" | "cart" | "prep";
+type TabKey = "menu" | "cart" | "prep";
 type DietMode = "omni" | "vege" | "pesco";
 type ProtProfile = 110 | 130 | 160;
 type BudgetTier = "eco" | "std" | "gourmet";
@@ -88,7 +89,8 @@ interface DynamicBatchStep {
 
 export default function MacroBatchApp() {
   // Navigation & UI state
-  const [tab, setTab] = useState<TabKey>("catalog");
+  const [tab, setTab] = useState<TabKey>("menu");
+  const [isCatalogOpen, setIsCatalogOpen] = useState<boolean>(false);
   const [prepMode, setPrepMode] = useState<PrepSubMode>("batch");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
@@ -557,6 +559,7 @@ export default function MacroBatchApp() {
   const quickAddRecipe = (recipe: Recipe) => {
     if (swapSlotIndex !== null) {
       assignToDay(swapSlotIndex, recipe);
+      setIsCatalogOpen(false);
       setTab("menu");
       return;
     }
@@ -979,7 +982,7 @@ export default function MacroBatchApp() {
     }
 
     setIsScannerOpen(false);
-    setTab("catalog");
+    setIsCatalogOpen(true);
     showToast("Catalogue trié en priorité selon votre stock");
   };
 
@@ -999,44 +1002,30 @@ export default function MacroBatchApp() {
       {/* Mobile-First App Container */}
       <div className="max-w-[440px] mx-auto min-h-screen bg-[#F8F9FA] relative">
         {/* Minimalist Sticky Header */}
-        <header className="sticky top-0 z-30 bg-[#F8F9FA]/90 backdrop-blur-md border-b border-slate-200/70 px-4 py-3 flex items-center justify-between">
+        <header className="sticky top-0 z-30 bg-[#F8F9FA]/95 backdrop-blur-md border-b border-slate-200/60 px-4 py-3 flex items-center justify-between">
           <div>
             <h1 className="text-lg font-extrabold tracking-tight leading-none text-[#0F172A]">
               MacroBatch
             </h1>
-            <p className="text-[11px] font-medium text-slate-500 mt-0.5">
-              {totalWeeklyPortions} repas • {weightKg} kg •{" "}
-              {budgetTier === "eco" ? "Malin" : budgetTier === "std" ? "Équilibré" : "Gourmet"}
+            <p className="text-xs font-medium text-slate-500 mt-0.5">
+              {totalWeeklyPortions} portions cette semaine
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Compact Portion Selector (1P / 2P / 4P) */}
-            <div className="flex items-center bg-slate-200/70 p-0.5 rounded-full">
-              {[1, 2, 4].map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => {
-                    setPeopleCount(p);
-                    showToast(`Portions ajustées : ${p} ${p > 1 ? "personnes" : "personne"}`);
-                  }}
-                  className={`tap-scale px-2.5 py-1 rounded-full text-xs font-bold cursor-pointer transition-colors ${
-                    peopleCount === p
-                      ? "bg-white text-[#0F172A] shadow-xs"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  {p}P
-                </button>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() => openScannerModal("frigo")}
+              className="tap-scale h-9 px-3 rounded-full bg-white border border-slate-200 flex items-center gap-1.5 text-xs font-bold text-[#0F172A] cursor-pointer shadow-2xs"
+            >
+              <Camera className="w-3.5 h-3.5 text-[#FF5A36]" />
+              <span>{totalStockCount > 0 ? `Frigo (${totalStockCount})` : "Scanner"}</span>
+            </button>
 
-            {/* Discreet Settings Icon */}
             <button
               type="button"
               onClick={() => setIsSettingsOpen(true)}
-              aria-label="Préférences nutritionnelles"
+              aria-label="Préférences"
               className="tap-scale w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer shadow-2xs"
             >
               <SlidersHorizontal className="w-4 h-4" />
@@ -1045,46 +1034,80 @@ export default function MacroBatchApp() {
         </header>
 
         {/* ================================================================
-            TAB 1: CATALOGUE (AVEC SCAN FRIGO / PLACARD DÈS L'ACCUEIL)
+            TAB 1: SEMAINE (ACCUEIL ÉPURÉ ÉTAPE 1/3)
             ================================================================ */}
-        {tab === "catalog" && (
-          <main className="px-4 pt-3 space-y-3.5">
-            {swapSlotIndex !== null && (
-              <div className="bg-[#0F172A] text-white rounded-2xl px-4 py-3 flex items-center justify-between">
-                <div className="text-xs">
-                  <span className="text-slate-300 block">Remplacement pour</span>
-                  <strong className="font-bold text-sm">{DAYS_FULL[swapSlotIndex]}</strong>
+        {tab === "menu" && (
+          <main className="px-4 pt-4 space-y-4">
+            {/* Step-by-step Hero Card */}
+            <section className="bg-[#0F172A] text-white rounded-3xl p-5 space-y-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#FF5A36] block">
+                    Étape 1 sur 3 • Menu
+                  </span>
+                  <h2 className="text-xl font-extrabold mt-0.5 leading-tight">
+                    Ta semaine est prête
+                  </h2>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSwapSlotIndex(null)}
-                  className="text-xs font-semibold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-full cursor-pointer"
-                >
-                  Annuler
-                </button>
+                {hasCustomDayPeople && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSlotPeopleCounts([null, null, null, null, null]);
+                      showToast(`Tous les jours remis à ${peopleCount} pers.`);
+                    }}
+                    className="text-[11px] font-bold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-full text-white cursor-pointer shrink-0"
+                  >
+                    Remettre à {peopleCount}P
+                  </button>
+                )}
               </div>
-            )}
 
-            {/* Compact Zero-Waste Fridge & Pantry Scanner Bar right at the top of Catalog */}
-            <div className="bg-white rounded-2xl p-3 border border-slate-200/80 shadow-2xs flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#059669]" />
-                  <strong className="text-xs font-extrabold text-[#0F172A] block truncate">
-                    {totalStockCount > 0
-                      ? `${totalStockCount} ingrédient${totalStockCount > 1 ? "s" : ""} en stock détecté${totalStockCount > 1 ? "s" : ""}`
-                      : "Cuisiner avec votre frigo & placard"}
+              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-white/10 text-center">
+                <div>
+                  <strong className="text-base font-extrabold text-white font-mono-tabular block">
+                    {totalWeeklyPortions}
                   </strong>
+                  <span className="text-[11px] text-slate-400">portions</span>
                 </div>
-                <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                  {totalStockCount > 0
-                    ? "Plats triés en priorité pour zéro gaspillage"
-                    : "Prenez une photo pour prioriser les plats et réduire les courses"}
-                </p>
+                <div>
+                  <strong className="text-base font-extrabold text-[#34D399] font-mono-tabular block">
+                    {avgCostPerMeal.toFixed(2).replace(".", ",")} €
+                  </strong>
+                  <span className="text-[11px] text-slate-400">par repas</span>
+                </div>
+                <div>
+                  <strong className="text-base font-extrabold text-[#FF5A36] font-mono-tabular block">
+                    {totalBatchMinutes} min
+                  </strong>
+                  <span className="text-[11px] text-slate-400">de cuisine</span>
+                </div>
               </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
-                {totalStockCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setTab("cart")}
+                className="tap-scale w-full py-3 rounded-2xl bg-[#FF5A36] hover:bg-[#e84f2e] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>Voir ma liste de courses</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </section>
+
+            {/* Optional Active Stock Pill */}
+            {totalStockCount > 0 && (
+              <div className="bg-[#ECFDF5] border border-[#059669]/20 rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-[#065F46] truncate">
+                  {totalStockCount} ingrédient{totalStockCount > 1 ? "s" : ""} du frigo déduit{totalStockCount > 1 ? "s" : ""}
+                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => openScannerModal("frigo")}
+                    className="text-xs font-bold text-[#059669] cursor-pointer"
+                  >
+                    Modifier
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -1092,253 +1115,17 @@ export default function MacroBatchApp() {
                       setCustomStockTerms([]);
                       setScanPhotoPreview(null);
                       setVisionSummary(null);
-                      if (categoryFilter === "anti_gaspi") setCategoryFilter("all");
-                      showToast("Filtre frigo/placard réinitialisé");
+                      showToast("Stock réinitialisé");
                     }}
-                    className="tap-scale px-2.5 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold cursor-pointer"
+                    className="text-xs font-bold text-slate-500 cursor-pointer"
                   >
                     Effacer
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => openScannerModal("frigo")}
-                  className="tap-scale px-3 py-2 rounded-xl bg-[#0F172A] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Camera className="w-3.5 h-3.5 text-[#FF5A36]" />
-                  <span>{totalStockCount > 0 ? "Modifier" : "Scanner"}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Rechercher un plat, ingrédient..."
-                className="w-full pl-10 pr-9 py-2.5 bg-white rounded-2xl border border-slate-200 text-sm text-[#0F172A] placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {/* Clean Category Filter Pills */}
-            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-              {[
-                { id: "all", label: "Tout" },
-                ...(totalStockCount > 0
-                  ? [{ id: "anti_gaspi", label: "Avec mon stock" }]
-                  : []),
-                ...(diet === "omni"
-                  ? [
-                      { id: "volaille", label: "Volailles" },
-                      { id: "boeuf", label: "Bœuf 5%" },
-                    ]
-                  : []),
-                ...(diet !== "vege" ? [{ id: "poisson", label: "Poisson" }] : []),
-                { id: "vege_all", label: "Végétarien" },
-                { id: "eco", label: "Moins de 2,50€" },
-              ].map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => setCategoryFilter(cat.id)}
-                  className={`tap-scale px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer border transition-colors ${
-                    categoryFilter === cat.id
-                      ? "bg-[#0F172A] text-white border-[#0F172A]"
-                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Recipe Feed */}
-            <div className="space-y-4">
-              {filteredCatalog.map((recipe) => {
-                const slotIdx = weekSlots.indexOf(recipe.id);
-                const isAdded = slotIdx !== -1;
-                const prot = getDishProtein(recipe);
-                const cost = recipe.cost[budgetTier].toFixed(2).replace(".", ",");
-                const stockMatches = getRecipeStockMatches(recipe);
-
-                return (
-                  <article
-                    key={recipe.id}
-                    onClick={() => setSelectedRecipe(recipe)}
-                    className="bg-white rounded-3xl overflow-hidden border border-slate-200/80 shadow-2xs cursor-pointer"
-                  >
-                    <div className="relative aspect-[16/10] bg-slate-100 overflow-hidden">
-                      <img
-                        src={recipe.image}
-                        alt={recipe.name}
-                        loading="lazy"
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute top-3 left-3 flex items-center gap-1.5">
-                        <span className="bg-white/95 backdrop-blur-xs text-[#0F172A] text-xs font-bold px-2.5 py-1 rounded-full shadow-2xs">
-                          {recipe.cookMethodLabel}
-                        </span>
-                        {stockMatches.length > 0 && (
-                          <span className="bg-[#059669] text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-2xs">
-                            {stockMatches.length} en stock
-                          </span>
-                        )}
-                      </div>
-                      {isAdded && (
-                        <div className="absolute top-3 right-3 bg-[#0F172A] text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow-2xs">
-                          <Check className="w-3.5 h-3.5 text-[#34D399]" />
-                          <span>{DAYS_SHORT[slotIdx]}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="p-4 space-y-3">
-                      <div>
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                          {recipe.categoryLabel}
-                        </span>
-                        <h2 className="text-base font-bold text-[#0F172A] leading-snug mt-0.5">
-                          {recipe.name}
-                        </h2>
-                        {stockMatches.length > 0 && (
-                          <p className="text-[11px] font-semibold text-[#059669] mt-1 truncate">
-                            Utilise votre stock : {stockMatches.join(", ")}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1">
-                        <div className="flex items-center gap-2 text-xs font-semibold">
-                          <span className="bg-[#FFF1EE] text-[#FF5A36] px-2.5 py-1 rounded-lg font-bold font-mono-tabular">
-                            {prot}g prot
-                          </span>
-                          <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-bold font-mono-tabular">
-                            {cost} € / part
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            quickAddRecipe(recipe);
-                          }}
-                          className={`tap-scale px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5 ${
-                            swapSlotIndex !== null
-                              ? "bg-[#FF5A36] text-white"
-                              : isAdded
-                              ? "bg-slate-100 text-slate-700"
-                              : "bg-[#0F172A] text-white"
-                          }`}
-                        >
-                          {swapSlotIndex !== null ? (
-                            <>
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Choisir</span>
-                            </>
-                          ) : isAdded ? (
-                            <span>Modifier jour</span>
-                          ) : (
-                            <>
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Ajouter</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-
-              {filteredCatalog.length === 0 && (
-                <div className="bg-white rounded-3xl p-8 text-center border border-slate-200">
-                  <p className="text-sm font-semibold text-slate-600">
-                    Aucune recette ne correspond à cette recherche.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery("");
-                      setCategoryFilter("all");
-                    }}
-                    className="mt-3 text-xs font-bold text-[#FF5A36] cursor-pointer"
-                  >
-                    Réinitialiser les filtres
-                  </button>
-                </div>
-              )}
-            </div>
-          </main>
-        )}
-
-        {/* ================================================================
-            TAB 2: SEMAINE (MON MENU)
-            ================================================================ */}
-        {tab === "menu" && (
-          <main className="px-4 pt-3 space-y-4">
-            <section className="bg-[#0F172A] text-white rounded-3xl p-5 space-y-4">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <span className="text-xs font-medium text-slate-400 block">
-                    Synthèse de votre semaine
-                  </span>
-                  <h2 className="text-lg font-extrabold mt-0.5">
-                    {totalWeeklyPortions} portions programmées
-                  </h2>
-                </div>
-                {hasCustomDayPeople ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSlotPeopleCounts([null, null, null, null, null]);
-                      showToast(`Tous les jours remis à ${peopleCount} pers.`);
-                    }}
-                    className="text-[11px] font-bold bg-[#FF5A36] hover:bg-[#e84f2e] px-3 py-1.5 rounded-full text-white cursor-pointer shrink-0"
-                  >
-                    Tout remettre à {peopleCount}P
-                  </button>
-                ) : (
-                  <span className="text-xs font-bold bg-white/10 px-3 py-1 rounded-full text-slate-200">
-                    Cible {targetDailyProtG}g/j
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-white/10 text-center">
-                <div>
-                  <span className="text-[11px] text-slate-400 block">Protéines / j</span>
-                  <strong className="text-base font-extrabold text-[#FF5A36] font-mono-tabular">
-                    {avgProtPerMeal * 2}g
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-[11px] text-slate-400 block">Coût / repas</span>
-                  <strong className="text-base font-extrabold text-[#34D399] font-mono-tabular">
-                    {avgCostPerMeal.toFixed(2).replace(".", ",")} €
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-[11px] text-slate-400 block">Session Batch</span>
-                  <strong className="text-base font-extrabold text-white font-mono-tabular">
-                    {totalBatchMinutes} min
-                  </strong>
                 </div>
               </div>
-            </section>
+            )}
 
+            {/* Clean Day Cards */}
             <div className="space-y-3">
               {activeDishes.map((dish, idx) => {
                 const stockUsed = getRecipeStockMatches(dish);
@@ -1349,17 +1136,17 @@ export default function MacroBatchApp() {
                   <div
                     key={`${dish.id}-${idx}`}
                     onClick={() => setSelectedRecipe(dish)}
-                    className="bg-white rounded-2xl p-3 border border-slate-200/80 space-y-2.5 cursor-pointer"
+                    className="bg-white rounded-3xl p-3.5 border border-slate-200/70 shadow-2xs space-y-3 cursor-pointer"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3.5">
                       <img
                         src={dish.image}
                         alt={dish.shortName}
-                        className="w-16 h-16 rounded-xl object-cover shrink-0 bg-slate-100"
+                        className="w-20 h-20 rounded-2xl object-cover shrink-0 bg-slate-100"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-[#FF5A36]">
+                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#FF5A36]">
                             {DAYS_FULL[idx]}
                           </span>
                           {isCustomDay && (
@@ -1369,43 +1156,39 @@ export default function MacroBatchApp() {
                           )}
                           {stockUsed.length > 0 && (
                             <span className="text-[10px] font-bold text-[#059669]">
-                              • {stockUsed.length} en stock
+                              • Frigo
                             </span>
                           )}
                         </div>
-                        <h3 className="text-sm font-bold text-[#0F172A] truncate">
+                        <h3 className="text-base font-extrabold text-[#0F172A] truncate mt-0.5">
                           {dish.shortName}
                         </h3>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 font-mono-tabular">
-                          <span>{getDishProtein(dish)}g prot</span>
-                          <span>•</span>
-                          <span>{dish.cost[budgetTier].toFixed(2).replace(".", ",")} €</span>
-                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5 font-mono-tabular">
+                          {getDishProtein(dish)}g prot • {dish.cost[budgetTier].toFixed(2).replace(".", ",")} €
+                        </p>
                       </div>
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setSwapSlotIndex(idx);
-                          setTab("catalog");
+                          setIsCatalogOpen(true);
                         }}
-                        className="tap-scale px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 shrink-0 cursor-pointer flex items-center gap-1"
+                        className="tap-scale px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 shrink-0 cursor-pointer"
                       >
-                        <RefreshCw className="w-3 h-3" />
-                        <span>Remplacer</span>
+                        Changer
                       </button>
                     </div>
 
-                    {/* Per-day guest / portion stepper */}
                     <div
                       onClick={(e) => e.stopPropagation()}
-                      className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs"
+                      className="flex items-center justify-between pt-2.5 border-t border-slate-100 text-xs"
                     >
                       <span className="text-slate-500 font-medium">
-                        Convives ce jour{" "}
+                        Pour {dayPeople} pers.{" "}
                         <span className="text-slate-400">({dayPeople * 2} portions)</span>
                       </span>
-                      <div className="flex items-center gap-1.5 bg-slate-100 rounded-full p-0.5">
+                      <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5">
                         <button
                           type="button"
                           onClick={() => updateDayPeopleCount(idx, -1)}
@@ -1415,7 +1198,7 @@ export default function MacroBatchApp() {
                         >
                           −
                         </button>
-                        <span className="min-w-[34px] text-center font-extrabold text-[#0F172A] font-mono-tabular">
+                        <span className="min-w-[32px] text-center font-extrabold text-[#0F172A] font-mono-tabular">
                           {dayPeople}P
                         </span>
                         <button
@@ -1754,11 +1537,10 @@ export default function MacroBatchApp() {
         )}
 
         {/* ================================================================
-            BOTTOM TAB BAR (4 TABS ONLY)
+            BOTTOM TAB BAR (3 TABS ONLY: SEMAINE -> COURSES -> CUISINER)
             ================================================================ */}
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[440px] z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 pt-2 pb-safe flex items-center justify-around">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[440px] z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-4 pt-2 pb-safe grid grid-cols-3">
           {[
-            { id: "catalog", label: "Catalogue", icon: BookOpen, badge: 0 },
             { id: "menu", label: "Semaine", icon: Calendar, badge: 0 },
             {
               id: "cart",
@@ -1772,7 +1554,7 @@ export default function MacroBatchApp() {
             },
             {
               id: "prep",
-              label: "Préparation",
+              label: "Cuisiner",
               icon: ChefHat,
               badge: Math.max(0, dynamicBatchTimeline.length - doneStepsCount),
             },
@@ -1784,7 +1566,7 @@ export default function MacroBatchApp() {
                 key={item.id}
                 type="button"
                 onClick={() => setTab(item.id as TabKey)}
-                className={`tap-scale relative flex flex-col items-center gap-1 px-3 py-1 rounded-xl cursor-pointer transition-colors ${
+                className={`tap-scale relative flex flex-col items-center gap-1 py-1 rounded-xl cursor-pointer transition-colors ${
                   isActive ? "text-[#FF5A36]" : "text-slate-400 hover:text-slate-700"
                 }`}
               >
@@ -1808,6 +1590,157 @@ export default function MacroBatchApp() {
           })}
         </nav>
       </div>
+
+      {/* ================================================================
+          CATALOGUE DRAWER MODAL (OUVERT QUAND ON CHANGE UN PLAT)
+          ================================================================ */}
+      {isCatalogOpen && (
+        <div
+          onClick={() => {
+            setIsCatalogOpen(false);
+            setSwapSlotIndex(null);
+          }}
+          className="fixed inset-0 z-50 bg-[#0F172A]/60 backdrop-blur-xs flex items-end sm:items-center justify-center"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#F8F9FA] w-full max-w-[440px] rounded-t-3xl sm:rounded-3xl p-4 pb-safe space-y-3 shadow-2xl h-[88vh] flex flex-col"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200/80 shrink-0">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#FF5A36] block">
+                  {swapSlotIndex !== null
+                    ? `Remplacer ${DAYS_FULL[swapSlotIndex]}`
+                    : "Catalogue recettes"}
+                </span>
+                <h2 className="text-base font-extrabold text-[#0F172A]">
+                  Choisir un plat
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCatalogOpen(false);
+                  setSwapSlotIndex(null);
+                }}
+                className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative shrink-0">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Rechercher un plat, ingrédient..."
+                className="w-full pl-10 pr-9 py-2.5 bg-white rounded-2xl border border-slate-200 text-sm text-[#0F172A] placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Clean Category Filter Pills */}
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 shrink-0">
+              {[
+                { id: "all", label: "Tout" },
+                ...(totalStockCount > 0
+                  ? [{ id: "anti_gaspi", label: "Avec mon stock" }]
+                  : []),
+                ...(diet === "omni"
+                  ? [
+                      { id: "volaille", label: "Volailles" },
+                      { id: "boeuf", label: "Bœuf 5%" },
+                    ]
+                  : []),
+                ...(diet !== "vege" ? [{ id: "poisson", label: "Poisson" }] : []),
+                { id: "vege_all", label: "Végétarien" },
+                { id: "eco", label: "Moins de 2,50€" },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setCategoryFilter(cat.id)}
+                  className={`tap-scale px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer border transition-colors ${
+                    categoryFilter === cat.id
+                      ? "bg-[#0F172A] text-white border-[#0F172A]"
+                      : "bg-white text-slate-600 border-slate-200"
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Scrollable Recipe List */}
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-0.5">
+              {filteredCatalog.map((recipe) => {
+                const slotIdx = weekSlots.indexOf(recipe.id);
+                const isAdded = slotIdx !== -1;
+                const prot = getDishProtein(recipe);
+                const cost = recipe.cost[budgetTier].toFixed(2).replace(".", ",");
+                const stockMatches = getRecipeStockMatches(recipe);
+
+                return (
+                  <div
+                    key={recipe.id}
+                    onClick={() => quickAddRecipe(recipe)}
+                    className="bg-white rounded-2xl p-2.5 border border-slate-200/80 flex items-center gap-3 cursor-pointer tap-scale"
+                  >
+                    <img
+                      src={recipe.image}
+                      alt={recipe.name}
+                      loading="lazy"
+                      className="w-16 h-16 rounded-xl object-cover shrink-0 bg-slate-100"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {stockMatches.length > 0 && (
+                          <span className="text-[10px] font-bold bg-[#ECFDF5] text-[#059669] px-1.5 py-0.5 rounded">
+                            {stockMatches.length} en stock
+                          </span>
+                        )}
+                        {isAdded && (
+                          <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                            {DAYS_SHORT[slotIdx]}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-sm font-extrabold text-[#0F172A] truncate">
+                        {recipe.shortName}
+                      </h3>
+                      <p className="text-xs text-slate-500 font-mono-tabular">
+                        {prot}g prot • {cost} € • {recipe.cookMethodLabel}
+                      </p>
+                    </div>
+                    <span className="px-3 py-1.5 rounded-xl bg-[#FF5A36] text-white text-xs font-bold shrink-0">
+                      Choisir
+                    </span>
+                  </div>
+                );
+              })}
+
+              {filteredCatalog.length === 0 && (
+                <div className="bg-white rounded-2xl p-6 text-center border border-slate-200">
+                  <p className="text-xs font-semibold text-slate-600">
+                    Aucune recette trouvée.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ================================================================
           FRIDGE / PANTRY PHOTO SCANNER MODAL SHEET (ZERO-WASTE CATALOG & CART)
@@ -2299,6 +2232,31 @@ export default function MacroBatchApp() {
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block">
+                Personnes par défaut (ajustable par jour dans Semaine)
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {[1, 2, 4].map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      setPeopleCount(p);
+                      showToast(`Défaut : ${p} ${p > 1 ? "personnes" : "personne"}`);
+                    }}
+                    className={`tap-scale py-2 rounded-xl border text-xs font-bold cursor-pointer ${
+                      peopleCount === p
+                        ? "bg-[#0F172A] text-white border-[#0F172A]"
+                        : "bg-slate-50 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    {p} {p > 1 ? "personnes" : "personne"}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-2">
