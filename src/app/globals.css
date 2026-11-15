@@ -45,7 +45,12 @@ body {
 .tap-scale {
   transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.4, 1);
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 .tap-scale:active {
   transform: scale(0.97);
+}
+
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }

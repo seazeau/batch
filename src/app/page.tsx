@@ -112,7 +112,12 @@ export default function MacroBatchApp() {
   const [isListeningVoice, setIsListeningVoice] = useState<boolean>(false);
   const [voiceTranscript, setVoiceTranscript] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const speechRecRef = useRef<unknown>(null);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+  }, [tab]);
 
   // User profile & preferences (tucked cleanly in settings)
   const [peopleCount, setPeopleCount] = useState<number>(2);
@@ -714,6 +719,7 @@ export default function MacroBatchApp() {
     } finally {
       setIsAnalyzingPhoto(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (galleryInputRef.current) galleryInputRef.current.value = "";
     }
   };
 
@@ -1653,12 +1659,26 @@ export default function MacroBatchApp() {
         {/* ================================================================
             BOTTOM TAB BAR (4 TABS ONLY)
             ================================================================ */}
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[440px] z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 py-2 flex items-center justify-around">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[440px] z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 pt-2 pb-safe flex items-center justify-around">
           {[
-            { id: "catalog", label: "Catalogue", icon: BookOpen },
-            { id: "menu", label: "Semaine", icon: Calendar },
-            { id: "cart", label: "Courses", icon: ShoppingBag },
-            { id: "prep", label: "Préparation", icon: ChefHat },
+            { id: "catalog", label: "Catalogue", icon: BookOpen, badge: 0 },
+            { id: "menu", label: "Semaine", icon: Calendar, badge: 0 },
+            {
+              id: "cart",
+              label: "Courses",
+              icon: ShoppingBag,
+              badge: Math.max(
+                0,
+                totalGroceryCount -
+                  Object.values(checkedGroceries).filter(Boolean).length
+              ),
+            },
+            {
+              id: "prep",
+              label: "Préparation",
+              icon: ChefHat,
+              badge: Math.max(0, dynamicBatchTimeline.length - doneStepsCount),
+            },
           ].map((item) => {
             const Icon = item.icon;
             const isActive = tab === item.id;
@@ -1667,11 +1687,24 @@ export default function MacroBatchApp() {
                 key={item.id}
                 type="button"
                 onClick={() => setTab(item.id as TabKey)}
-                className={`tap-scale flex flex-col items-center gap-1 px-3 py-1 rounded-xl cursor-pointer transition-colors ${
+                className={`tap-scale relative flex flex-col items-center gap-1 px-3 py-1 rounded-xl cursor-pointer transition-colors ${
                   isActive ? "text-[#FF5A36]" : "text-slate-400 hover:text-slate-700"
                 }`}
               >
-                <Icon className="w-5 h-5" />
+                <div className="relative">
+                  <Icon className="w-5 h-5" />
+                  {item.badge > 0 && (
+                    <span
+                      className={`absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-extrabold flex items-center justify-center leading-none ${
+                        isActive
+                          ? "bg-[#FF5A36] text-white"
+                          : "bg-slate-200 text-slate-700"
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </div>
                 <span className="text-[11px] font-bold">{item.label}</span>
               </button>
             );
@@ -1689,7 +1722,7 @@ export default function MacroBatchApp() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white w-full max-w-[440px] rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-2xl max-h-[88vh] overflow-y-auto"
+            className="bg-white w-full max-w-[440px] rounded-t-3xl sm:rounded-3xl p-5 pb-safe space-y-4 shadow-2xl max-h-[88vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
@@ -1758,12 +1791,19 @@ export default function MacroBatchApp() {
               </button>
             </div>
 
-            {/* Hidden Native Camera Input */}
+            {/* Hidden Native Camera & Gallery Inputs */}
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*"
               capture="environment"
+              onChange={handlePhotoUpload}
+              className="hidden"
+            />
+            <input
+              ref={galleryInputRef}
+              type="file"
+              accept="image/*"
               onChange={handlePhotoUpload}
               className="hidden"
             />
@@ -1776,20 +1816,35 @@ export default function MacroBatchApp() {
                   alt="Aperçu"
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute top-2.5 left-2.5 bg-[#0F172A]/85 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
+                <div
+                  className={`absolute top-2.5 left-2.5 text-white text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                    visionMode === "gemini-vision" || visionMode === "openai-vision"
+                      ? "bg-[#059669]/90"
+                      : "bg-amber-600/90"
+                  }`}
+                >
                   {visionMode === "gemini-vision"
                     ? "Gemini Vision"
                     : visionMode === "openai-vision"
                     ? "OpenAI Vision"
                     : "Vision Locale"}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="absolute bottom-3 right-3 bg-white/95 text-[#0F172A] text-xs font-bold px-3 py-1.5 rounded-full shadow-sm cursor-pointer"
-                >
-                  Reprendre une photo
-                </button>
+                <div className="absolute bottom-3 right-3 flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    className="bg-white/95 text-[#0F172A] text-xs font-bold px-3 py-1.5 rounded-full shadow-sm cursor-pointer"
+                  >
+                    Galerie
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-white/95 text-[#0F172A] text-xs font-bold px-3 py-1.5 rounded-full shadow-sm cursor-pointer"
+                  >
+                    Reprendre
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="border border-slate-200 rounded-2xl p-4 text-center space-y-3 bg-slate-50/70">
@@ -1803,7 +1858,15 @@ export default function MacroBatchApp() {
                     className="tap-scale px-3.5 py-2.5 bg-[#0F172A] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                   >
                     <Camera className="w-3.5 h-3.5 text-[#FF5A36]" />
-                    <span>Photo IA</span>
+                    <span>Caméra IA</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    className="tap-scale px-3.5 py-2.5 bg-white border border-slate-300 text-[#0F172A] rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ImageIcon className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Galerie</span>
                   </button>
                   <button
                     type="button"
@@ -1815,14 +1878,13 @@ export default function MacroBatchApp() {
                     }`}
                   >
                     <Mic className="w-3.5 h-3.5" />
-                    <span>{isListeningVoice ? "Arrêter dictée" : "Dicter au micro"}</span>
+                    <span>{isListeningVoice ? "Arrêter dictée" : "Micro"}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => simulateDetectionForZone(scanZone)}
-                    className="tap-scale px-3 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    className="tap-scale px-3 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                   >
-                    <ImageIcon className="w-3.5 h-3.5" />
                     <span>Exemple</span>
                   </button>
                 </div>
@@ -1851,8 +1913,14 @@ export default function MacroBatchApp() {
             )}
 
             {visionSummary && !isAnalyzingPhoto && !isListeningVoice && (
-              <div className="bg-[#ECFDF5] border border-[#059669]/25 rounded-2xl px-3.5 py-2.5">
-                <p className="text-xs font-semibold text-[#065F46]">{visionSummary}</p>
+              <div
+                className={`rounded-2xl px-3.5 py-2.5 border ${
+                  visionMode === "gemini-vision" || visionMode === "openai-vision"
+                    ? "bg-[#ECFDF5] border-[#059669]/25 text-[#065F46]"
+                    : "bg-amber-50 border-amber-200 text-amber-900"
+                }`}
+              >
+                <p className="text-xs font-semibold">{visionSummary}</p>
               </div>
             )}
 

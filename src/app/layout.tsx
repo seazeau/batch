@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -20,10 +20,23 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+  themeColor: "#F8F9FA",
+};
+
 export const metadata: Metadata = {
   title: "MacroBatch — Batch Cooking Protéiné & Budgétaire (1h20)",
   description:
     "Optimiseur de batch cooking hebdomadaire : 10 repas (20 portions), < 3,20€/portion et 130g de protéines/jour préparés en 1h20 le dimanche.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "MacroBatch",
+  },
 };
 
 export default function RootLayout({
