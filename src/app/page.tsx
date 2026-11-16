@@ -414,6 +414,117 @@ export default function MacroBatchApp() {
     }, 0);
   }, [activeDishes, effectiveSlotPeople, peopleCount, budgetTier, supermarketMult, skippedDays]);
 
+  const matchesUserConstraints = (recipe: Recipe, targetDiet: DietMode = diet, targetAvoid: string[] = avoidList): boolean => {
+    if (targetDiet === "vege" && recipe.diet !== "vege" && recipe.diet !== "both") return false;
+    if (targetDiet === "pesco" && recipe.diet === "omni") return false;
+
+    if (targetAvoid.length === 0) return true;
+    const textBlob = `${recipe.name} ${recipe.shortName} ${recipe.ingredients.map((i) => i.name).join(" ")}`.toLowerCase();
+
+    if (targetAvoid.includes("lactose")) {
+      const dairyTerms = ["skyr", "yaourt", "feta", "mozzarella", "parmesan", "fromage", "crème", "creme", "halloumi", "cheddar", "chèvre", "chevre", "burrata", "ricotta"];
+      const hasDairy = dairyTerms.some((t) => textBlob.includes(t)) || (textBlob.includes("lait") && !textBlob.includes("lait de coco"));
+      if (hasDairy) return false;
+    }
+    if (targetAvoid.includes("porc")) {
+      if (["porc", "lardon", "jambon", "chorizo", "bacon", "saucisse"].some((t) => textBlob.includes(t))) {
+        return false;
+      }
+    }
+    if (targetAvoid.includes("fruits_mer")) {
+      if (["crevette", "moule", "calamar", "crustacé", "gambas", "saint-jacques"].some((t) => textBlob.includes(t))) {
+        return false;
+      }
+    }
+    if (targetAvoid.includes("noix")) {
+      if (["noix", "amande", "cacahuète", "cacahuete", "satay", "cajou", "noisette", "pistache"].some((t) => textBlob.includes(t))) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const generateSmartWeekMenu = (targetOffset: 0 | 1 = weekOffset) => {
+    let pool = RECIPE_DATABASE.filter((r) => matchesUserConstraints(r));
+    if (pool.length < 5) {
+      pool = RECIPE_DATABASE.filter((r) => {
+        if (diet === "vege" && r.diet !== "vege" && r.diet !== "both") return false;
+        if (diet === "pesco" && r.diet === "omni") return false;
+        return true;
+      });
+    }
+    if (pool.length === 0) return;
+
+    // Shuffle pool with slight preference for favorites and stock matches
+    const scored = [...pool].sort((a, b) => {
+      const aBoost = getRecipeStockMatches(a).length * 0.4 + (favoriteIds.includes(a.id) ? 0.3 : 0);
+      const bBoost = getRecipeStockMatches(b).length * 0.4 + (favoriteIds.includes(b.id) ? 0.3 : 0);
+      return Math.random() - 0.5 + (bBoost - aBoost) * 0.25;
+    });
+
+    // Pick 5 varied dishes (preferring distinct categories)
+    const chosen: Recipe[] = [];
+    const usedCategories = new Set<string>();
+    for (const r of scored) {
+      if (chosen.length >= 5) break;
+      if (!usedCategories.has(r.category)) {
+        chosen.push(r);
+        usedCategories.add(r.category);
+      }
+    }
+    for (const r of scored) {
+      if (chosen.length >= 5) break;
+      if (!chosen.some((c) => c.id === r.id)) {
+        chosen.push(r);
+      }
+    }
+    while (chosen.length < 5) {
+      chosen.push(scored[chosen.length % scored.length]);
+    }
+
+    // Optimize cost to fit within weeklyBudget by swapping the most expensive slots with cheaper compatible dishes
+    const calcCost = (list: Recipe[]) =>
+      list.reduce((acc, dish, idx) => {
+        if (skippedDays[idx]) return acc;
+        const portions = (effectiveSlotPeople[idx] ?? peopleCount) * 2;
+        return acc + dish.cost[budgetTier] * supermarketMult * portions;
+      }, 0);
+
+    const cheapestPool = [...pool].sort((a, b) => a.cost[budgetTier] - b.cost[budgetTier]);
+    let guard = 0;
+    while (calcCost(chosen) > weeklyBudget && guard < 15) {
+      guard++;
+      // Find most expensive active slot
+      let maxIdx = -1;
+      let maxSlotCost = -1;
+      chosen.forEach((dish, idx) => {
+        if (skippedDays[idx]) return;
+        const portions = (effectiveSlotPeople[idx] ?? peopleCount) * 2;
+        const slotCost = dish.cost[budgetTier] * supermarketMult * portions;
+        if (slotCost > maxSlotCost) {
+          maxSlotCost = slotCost;
+          maxIdx = idx;
+        }
+      });
+      if (maxIdx === -1) break;
+
+      const replacement = cheapestPool.find(
+        (cand) =>
+          !chosen.some((c) => c.id === cand.id) &&
+          cand.cost[budgetTier] < chosen[maxIdx].cost[budgetTier]
+      );
+      if (!replacement) break;
+      chosen[maxIdx] = replacement;
+    }
+
+    const nextIds = chosen.map((r) => r.id);
+    if (targetOffset === 0) setWeekSlots(nextIds);
+    else setNextWeekSlots(nextIds);
+
+    const finalCost = Math.round(calcCost(chosen));
+    showToast(`Menu composé : ~${finalCost} € (budget ${weeklyBudget} €)`);
+  };
+
   const toggleFavorite = (recipeId: string) => {
     setFavoriteIds((prev) => {
       const exists = prev.includes(recipeId);
@@ -425,16 +536,14 @@ export default function MacroBatchApp() {
 
   const quickSwapOptions = useMemo(() => {
     if (quickSwapDayIdx === null) return [];
-    const currentId = weekSlots[quickSwapDayIdx];
+    const currentId = currentWeekSlots[quickSwapDayIdx];
     const pool = RECIPE_DATABASE.filter((r) => {
       if (r.id === currentId) return false;
-      if (diet === "vege" && r.diet !== "vege" && r.diet !== "both") return false;
-      if (diet === "pesco" && r.diet === "omni") return false;
-      return true;
+      return matchesUserConstraints(r);
     }).sort((a, b) => {
       // Prioritize not already in week, then favorites/stock, then budget
-      const aInWeek = weekSlots.includes(a.id) ? 1 : 0;
-      const bInWeek = weekSlots.includes(b.id) ? 1 : 0;
+      const aInWeek = currentWeekSlots.includes(a.id) ? 1 : 0;
+      const bInWeek = currentWeekSlots.includes(b.id) ? 1 : 0;
       if (aInWeek !== bInWeek) return aInWeek - bInWeek;
       const aScore =
         getRecipeStockMatches(a).length * 2 + (favoriteIds.includes(a.id) ? 1 : 0);
@@ -444,7 +553,7 @@ export default function MacroBatchApp() {
       return a.cost[budgetTier] - b.cost[budgetTier];
     });
     return pool.slice(0, 3);
-  }, [quickSwapDayIdx, weekSlots, diet, budgetTier, favoriteIds, inStockIds, customStockTerms]);
+  }, [quickSwapDayIdx, currentWeekSlots, diet, avoidList, budgetTier, favoriteIds, inStockIds, customStockTerms]);
 
   const addCustomCartItem = () => {
     const trimmed = newCartItemText.trim();
@@ -611,41 +720,41 @@ export default function MacroBatchApp() {
     return dynamicBatchTimeline.reduce((acc, s) => acc + s.durationMin, 0);
   }, [dynamicBatchTimeline]);
 
-  // Diet change handler
+  // Diet & avoidList change handlers (auto-adapt active menus)
+  const sanitizeSlotsForConstraints = (slots: string[], nextDiet: DietMode, nextAvoid: string[]) => {
+    const compatible = RECIPE_DATABASE.filter((r) => matchesUserConstraints(r, nextDiet, nextAvoid));
+    if (compatible.length === 0) return slots;
+    return slots.map((id, idx) => {
+      const r = RECIPE_DATABASE.find((item) => item.id === id);
+      if (r && matchesUserConstraints(r, nextDiet, nextAvoid)) return id;
+      const fallback = compatible[idx % compatible.length];
+      return fallback.id;
+    });
+  };
+
   const handleDietChange = (nextDiet: DietMode) => {
     setDiet(nextDiet);
     setCategoryFilter("all");
-    if (nextDiet === "vege") {
-      setWeekSlots((prev) =>
-        prev.map((id) => {
-          const r = RECIPE_DATABASE.find((item) => item.id === id);
-          if (!r || (r.diet !== "vege" && r.diet !== "both")) {
-            return "d_halloumi";
-          }
-          return id;
-        })
-      );
-    } else if (nextDiet === "pesco") {
-      setWeekSlots((prev) =>
-        prev.map((id) => {
-          const r = RECIPE_DATABASE.find((item) => item.id === id);
-          if (!r || r.diet === "omni") {
-            return "d_thon_bowl";
-          }
-          return id;
-        })
-      );
-    }
+    setWeekSlots((prev) => sanitizeSlotsForConstraints(prev, nextDiet, avoidList));
+    setNextWeekSlots((prev) => sanitizeSlotsForConstraints(prev, nextDiet, avoidList));
     showToast(
       `Régime : ${nextDiet === "vege" ? "Végétarien" : nextDiet === "pesco" ? "Pescatarien" : "Omnivore"}`
     );
   };
 
+  const toggleAvoidOption = (optId: string) => {
+    const nextAvoid = avoidList.includes(optId)
+      ? avoidList.filter((x) => x !== optId)
+      : [...avoidList, optId];
+    setAvoidList(nextAvoid);
+    setWeekSlots((prev) => sanitizeSlotsForConstraints(prev, diet, nextAvoid));
+    setNextWeekSlots((prev) => sanitizeSlotsForConstraints(prev, diet, nextAvoid));
+  };
+
   // Filtered AND Sorted catalog recipes (prioritizing recipes using scanned fridge/pantry items)
   const filteredCatalog = useMemo(() => {
     const filtered = RECIPE_DATABASE.filter((r) => {
-      if (diet === "vege" && r.diet !== "vege" && r.diet !== "both") return false;
-      if (diet === "pesco" && r.diet === "omni") return false;
+      if (!matchesUserConstraints(r)) return false;
 
       if (categoryFilter === "anti_gaspi") {
         return getRecipeStockMatches(r).length > 0;
@@ -680,7 +789,7 @@ export default function MacroBatchApp() {
       );
     }
     return filtered;
-  }, [diet, categoryFilter, searchQuery, budgetTier, inStockIds, customStockTerms, totalStockCount]);
+  }, [diet, avoidList, categoryFilter, searchQuery, budgetTier, inStockIds, customStockTerms, totalStockCount]);
 
   const assignToDay = (dayIdx: number, recipe: Recipe) => {
     const updater = (prev: string[]) => {
@@ -710,11 +819,11 @@ export default function MacroBatchApp() {
     setSelectedRecipe(recipe);
   };
 
-  // Aggregated dynamic grocery list
+  // Aggregated dynamic grocery list with itemized & aisle-level pricing
   const groceryByAisle = useMemo(() => {
     const map = new Map<
       string,
-      { name: string; qty: number; unit: string; aisle: SupermarketAisle; isPantry: boolean }
+      { name: string; qty: number; unit: string; aisle: SupermarketAisle; isPantry: boolean; estPrice: number }
     >();
 
     activeDishes.forEach((dish, dayIdx) => {
@@ -725,8 +834,10 @@ export default function MacroBatchApp() {
         const key = `${ing.aisle}__${ing.name}__${ing.unit}`;
         const existing = map.get(key);
         const addedQty = ing.qty * portionsPerDish;
+        const addedPrice = (ing.pricePerPortion || 0) * portionsPerDish * supermarketMult;
         if (existing) {
           existing.qty += addedQty;
+          existing.estPrice += addedPrice;
         } else {
           map.set(key, {
             name: ing.name,
@@ -734,6 +845,7 @@ export default function MacroBatchApp() {
             unit: ing.unit,
             aisle: ing.aisle,
             isPantry: Boolean(ing.isPantry),
+            estPrice: addedPrice,
           });
         }
       });
@@ -743,9 +855,10 @@ export default function MacroBatchApp() {
       const items = Array.from(map.values())
         .filter((i) => i.aisle === aisle)
         .sort((a, b) => a.name.localeCompare(b.name));
-      return { aisle, label: AISLE_LABELS[aisle], items };
+      const aisleTotal = items.reduce((sum, i) => sum + i.estPrice, 0);
+      return { aisle, label: AISLE_LABELS[aisle], items, aisleTotal };
     }).filter((g) => g.items.length > 0);
-  }, [activeDishes, peopleCount, effectiveSlotPeople, deductPantry, skippedDays]);
+  }, [activeDishes, peopleCount, effectiveSlotPeople, deductPantry, skippedDays, supermarketMult]);
 
   const shareGroceryList = async () => {
     const lines: string[] = [
@@ -1247,19 +1360,22 @@ export default function MacroBatchApp() {
               <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setTab("menu")}
-                  className="tap-scale py-3 px-4 rounded-2xl bg-[#141414] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  onClick={() => {
+                    generateSmartWeekMenu();
+                    setTab("menu");
+                  }}
+                  className="tap-scale py-3 px-3 rounded-2xl bg-[#141414] text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                 >
-                  <Calendar className="w-4 h-4 text-[#FCD34D]" />
-                  <span>Voir mon menu</span>
+                  <Sparkles className="w-4 h-4 text-[#FCD34D]" />
+                  <span>Générer mon menu</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsSettingsOpen(true)}
-                  className="tap-scale py-3 px-4 rounded-2xl bg-white text-[#1C1917] border border-[#E7E2DA] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  onClick={() => setTab("menu")}
+                  className="tap-scale py-3 px-3 rounded-2xl bg-white text-[#1C1917] border border-[#E7E2DA] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <Wallet className="w-3.5 h-3.5 text-[#92400E]" />
-                  <span>Budget {weeklyBudget} €</span>
+                  <Calendar className="w-3.5 h-3.5 text-[#92400E]" />
+                  <span>Voir la semaine</span>
                 </button>
               </div>
             </section>
@@ -1511,6 +1627,14 @@ export default function MacroBatchApp() {
                   }}
                 />
               </div>
+              <button
+                type="button"
+                onClick={() => generateSmartWeekMenu()}
+                className="tap-scale w-full py-2 rounded-2xl bg-[#FAF8F5] hover:bg-[#FEF3C7]/60 border border-[#EDE8E0] text-xs font-bold text-[#141414] flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#D97706]" />
+                <span>Composer un menu sous {weeklyBudget} €</span>
+              </button>
             </div>
 
             {/* Section Title */}
@@ -1871,9 +1995,16 @@ export default function MacroBatchApp() {
                     <h3 className="text-xs font-extrabold uppercase tracking-wider text-stone-600">
                       {group.label}
                     </h3>
-                    <span className="text-xs font-bold text-stone-400">
-                      {visibleItems.length}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {group.aisleTotal > 0 && (
+                        <span className="text-xs font-extrabold text-[#141414] font-mono-tabular">
+                          ~{group.aisleTotal.toFixed(2).replace(".", ",")} €
+                        </span>
+                      )}
+                      <span className="text-xs font-bold text-stone-400">
+                        {visibleItems.length}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="divide-y divide-[#EDE8E0]/60">
@@ -1921,9 +2052,16 @@ export default function MacroBatchApp() {
                             </div>
                           </div>
 
-                          <span className="text-xs font-bold text-stone-600 font-mono-tabular shrink-0">
-                            {formatQty(item.qty, item.unit)}
-                          </span>
+                          <div className="text-right shrink-0">
+                            <span className="text-xs font-bold text-stone-700 font-mono-tabular block">
+                              {formatQty(item.qty, item.unit)}
+                            </span>
+                            {item.estPrice > 0 && (
+                              <span className="text-[11px] font-semibold text-stone-400 font-mono-tabular block">
+                                ~{item.estPrice.toFixed(2).replace(".", ",")} €
+                              </span>
+                            )}
+                          </div>
                         </button>
                       );
                     })}
@@ -3048,7 +3186,7 @@ export default function MacroBatchApp() {
               </span>
               <div className="grid grid-cols-5 gap-1.5">
                 {DAYS_SHORT.map((day, dIdx) => {
-                  const isCurrent = weekSlots[dIdx] === selectedRecipe.id;
+                  const isCurrent = currentWeekSlots[dIdx] === selectedRecipe.id;
                   return (
                     <button
                       key={day}
@@ -3293,13 +3431,7 @@ export default function MacroBatchApp() {
                     <button
                       key={opt.id}
                       type="button"
-                      onClick={() =>
-                        setAvoidList((prev) =>
-                          prev.includes(opt.id)
-                            ? prev.filter((x) => x !== opt.id)
-                            : [...prev, opt.id]
-                        )
-                      }
+                      onClick={() => toggleAvoidOption(opt.id)}
                       className={`px-3 py-1.5 rounded-full text-[11px] font-bold border cursor-pointer ${
                         active
                           ? "bg-[#FEF3C7] text-[#92400E] border-[#F5B731]"
@@ -3389,13 +3521,27 @@ export default function MacroBatchApp() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsSettingsOpen(false)}
-              className="tap-scale w-full py-3.5 bg-[#141414] text-white rounded-2xl text-sm font-bold cursor-pointer"
-            >
-              Appliquer
-            </button>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  generateSmartWeekMenu();
+                  setIsSettingsOpen(false);
+                  setTab("menu");
+                }}
+                className="tap-scale py-3.5 bg-[#FEF3C7] text-[#92400E] border border-[#F5B731]/50 rounded-2xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Générer le menu</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(false)}
+                className="tap-scale py-3.5 bg-[#141414] text-white rounded-2xl text-xs font-extrabold cursor-pointer"
+              >
+                Appliquer
+              </button>
+            </div>
           </div>
         </div>
       )}
