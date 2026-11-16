@@ -27,6 +27,10 @@ import {
   Minus,
   Home,
   Receipt,
+  Heart,
+  Share2,
+  Wallet,
+  Sparkles,
 } from "lucide-react";
 import { RECIPE_DATABASE, Recipe, SupermarketAisle } from "@/data/recipeDatabase";
 
@@ -179,6 +183,15 @@ export default function MacroBatchApp() {
   const [deductPantry, setDeductPantry] = useState<boolean>(true);
   const [doneSteps, setDoneSteps] = useState<Record<number, boolean>>({});
 
+  // Yuma-inspired features: Weekly budget, favorites, custom cart items, quick 3-idea swap
+  const [weeklyBudget, setWeeklyBudget] = useState<number>(65);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [customCartItems, setCustomCartItems] = useState<
+    { id: string; name: string; checked: boolean }[]
+  >([]);
+  const [newCartItemText, setNewCartItemText] = useState<string>("");
+  const [quickSwapDayIdx, setQuickSwapDayIdx] = useState<number | null>(null);
+
   // Load saved state on mount
   useEffect(() => {
     try {
@@ -193,11 +206,14 @@ export default function MacroBatchApp() {
         if (parsed.protProfile) setProtProfile(parsed.protProfile);
         if (parsed.diet) setDiet(parsed.diet);
         if (parsed.budgetTier) setBudgetTier(parsed.budgetTier);
+        if (typeof parsed.weeklyBudget === "number") setWeeklyBudget(parsed.weeklyBudget);
         if (Array.isArray(parsed.weekSlots) && parsed.weekSlots.length === 5) {
           setWeekSlots(parsed.weekSlots);
         }
         if (Array.isArray(parsed.inStockIds)) setInStockIds(parsed.inStockIds);
         if (Array.isArray(parsed.customStockTerms)) setCustomStockTerms(parsed.customStockTerms);
+        if (Array.isArray(parsed.favoriteIds)) setFavoriteIds(parsed.favoriteIds);
+        if (Array.isArray(parsed.customCartItems)) setCustomCartItems(parsed.customCartItems);
         if (typeof parsed.visionApiKey === "string") setVisionApiKey(parsed.visionApiKey);
         if (parsed.checkedGroceries) setCheckedGroceries(parsed.checkedGroceries);
         if (parsed.doneSteps) setDoneSteps(parsed.doneSteps);
@@ -219,9 +235,12 @@ export default function MacroBatchApp() {
           protProfile,
           diet,
           budgetTier,
+          weeklyBudget,
           weekSlots,
           inStockIds,
           customStockTerms,
+          favoriteIds,
+          customCartItems,
           visionApiKey,
           checkedGroceries,
           doneSteps,
@@ -237,9 +256,12 @@ export default function MacroBatchApp() {
     protProfile,
     diet,
     budgetTier,
+    weeklyBudget,
     weekSlots,
     inStockIds,
     customStockTerms,
+    favoriteIds,
+    customCartItems,
     visionApiKey,
     checkedGroceries,
     doneSteps,
@@ -325,6 +347,55 @@ export default function MacroBatchApp() {
     const sum = activeDishes.reduce((acc, d) => acc + d.cost[budgetTier], 0);
     return sum / activeDishes.length;
   }, [activeDishes, budgetTier]);
+
+  const estimatedWeeklyCost = useMemo(() => {
+    return activeDishes.reduce((acc, dish, idx) => {
+      const portions = (effectiveSlotPeople[idx] ?? peopleCount) * 2;
+      return acc + dish.cost[budgetTier] * portions;
+    }, 0);
+  }, [activeDishes, effectiveSlotPeople, peopleCount, budgetTier]);
+
+  const toggleFavorite = (recipeId: string) => {
+    setFavoriteIds((prev) => {
+      const exists = prev.includes(recipeId);
+      const next = exists ? prev.filter((id) => id !== recipeId) : [...prev, recipeId];
+      showToast(exists ? "Retiré des favoris" : "Ajouté aux favoris");
+      return next;
+    });
+  };
+
+  const quickSwapOptions = useMemo(() => {
+    if (quickSwapDayIdx === null) return [];
+    const currentId = weekSlots[quickSwapDayIdx];
+    const pool = RECIPE_DATABASE.filter((r) => {
+      if (r.id === currentId) return false;
+      if (diet === "vege" && r.diet !== "vege" && r.diet !== "both") return false;
+      if (diet === "pesco" && r.diet === "omni") return false;
+      return true;
+    }).sort((a, b) => {
+      // Prioritize not already in week, then favorites/stock, then budget
+      const aInWeek = weekSlots.includes(a.id) ? 1 : 0;
+      const bInWeek = weekSlots.includes(b.id) ? 1 : 0;
+      if (aInWeek !== bInWeek) return aInWeek - bInWeek;
+      const aScore =
+        getRecipeStockMatches(a).length * 2 + (favoriteIds.includes(a.id) ? 1 : 0);
+      const bScore =
+        getRecipeStockMatches(b).length * 2 + (favoriteIds.includes(b.id) ? 1 : 0);
+      if (bScore !== aScore) return bScore - aScore;
+      return a.cost[budgetTier] - b.cost[budgetTier];
+    });
+    return pool.slice(0, 3);
+  }, [quickSwapDayIdx, weekSlots, diet, budgetTier, favoriteIds, inStockIds, customStockTerms]);
+
+  const addCustomCartItem = () => {
+    const trimmed = newCartItemText.trim();
+    if (!trimmed) return;
+    setCustomCartItems((prev) => [
+      ...prev,
+      { id: `${Date.now()}-${Math.random()}`, name: trimmed, checked: false },
+    ]);
+    setNewCartItemText("");
+  };
 
   const formatQty = (qty: number, unit: string) => {
     const rounded = Math.round(qty);
@@ -607,6 +678,43 @@ export default function MacroBatchApp() {
       return { aisle, label: AISLE_LABELS[aisle], items };
     }).filter((g) => g.items.length > 0);
   }, [activeDishes, peopleCount, effectiveSlotPeople, deductPantry]);
+
+  const shareGroceryList = async () => {
+    const lines: string[] = [
+      `Liste de courses MacroBatch (~${estimatedWeeklyCost.toFixed(0)} € pour ${totalWeeklyPortions} portions)`,
+      "",
+    ];
+    groceryByAisle.forEach((group) => {
+      const remaining = group.items.filter(
+        (item) => !checkedGroceries[`${group.aisle}-${item.name}`]
+      );
+      if (remaining.length === 0) return;
+      lines.push(`• ${group.label.toUpperCase()}`);
+      remaining.forEach((item) => {
+        lines.push(`  - ${item.name} (${formatQty(item.qty, item.unit)})`);
+      });
+      lines.push("");
+    });
+    const remainingCustom = customCartItems.filter((c) => !c.checked);
+    if (remainingCustom.length > 0) {
+      lines.push("• ARTICLES PERSO");
+      remainingCustom.forEach((c) => lines.push(`  - ${c.name}`));
+    }
+    const text = lines.join("\n").trim();
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({ title: "Liste de courses MacroBatch", text });
+        return;
+      }
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+        showToast("Liste de courses copiée !");
+        return;
+      }
+    } catch {
+      // User cancelled share or clipboard blocked
+    }
+  };
 
   // ================================================================
   // FRIDGE & PANTRY PHOTO SCANNER LOGIC (VISION AI + CATALOG PRIORITY + GROCERY DEDUCTION)
@@ -1289,6 +1397,62 @@ export default function MacroBatchApp() {
               </button>
             )}
 
+            {/* Yuma-Inspired Weekly Budget Gauge */}
+            <div className="bg-white border border-[#EDE8E0] rounded-3xl p-4 space-y-2.5 shadow-2xs">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-[#FEF3C7] text-[#92400E] flex items-center justify-center shrink-0">
+                    <Wallet className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">
+                      Budget de la semaine
+                    </span>
+                    <div className="flex items-baseline gap-1.5">
+                      <strong className="text-base font-extrabold text-[#141414] font-mono-tabular">
+                        ~{estimatedWeeklyCost.toFixed(0)} €
+                      </strong>
+                      <span className="text-xs text-stone-500 font-mono-tabular">
+                        / {weeklyBudget} € cible
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyBudget((b) => Math.max(20, b - 5))}
+                    className="w-7 h-7 rounded-full bg-[#FAF8F5] border border-[#EDE8E0] text-xs font-extrabold text-[#141414] cursor-pointer"
+                    aria-label="Réduire budget"
+                  >
+                    −
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyBudget((b) => Math.min(200, b + 5))}
+                    className="w-7 h-7 rounded-full bg-[#FAF8F5] border border-[#EDE8E0] text-xs font-extrabold text-[#141414] cursor-pointer"
+                    aria-label="Augmenter budget"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div className="h-2 rounded-full bg-[#FAF8F5] overflow-hidden border border-[#EDE8E0]/60">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    estimatedWeeklyCost <= weeklyBudget
+                      ? "bg-[#059669]"
+                      : estimatedWeeklyCost <= weeklyBudget * 1.15
+                      ? "bg-[#F5B731]"
+                      : "bg-[#FF5A36]"
+                  }`}
+                  style={{
+                    width: `${Math.min(100, Math.round((estimatedWeeklyCost / Math.max(1, weeklyBudget)) * 100))}%`,
+                  }}
+                />
+              </div>
+            </div>
+
             {/* Section Title */}
             <div className="flex items-center justify-between">
               <h2 className="font-serif text-xl font-bold text-[#1C1917]">
@@ -1301,20 +1465,21 @@ export default function MacroBatchApp() {
                     setSlotPeopleCounts([null, null, null, null, null]);
                     showToast(`Tous les jours remis à ${peopleCount} pers.`);
                   }}
-                  className="text-xs font-bold text-[#FF5A36] cursor-pointer"
+                  className="text-xs font-bold text-[#D97706] cursor-pointer"
                 >
                   Remettre à {peopleCount}P
                 </button>
               )}
             </div>
 
-            {/* Large Photo-First Jow-Style Dish Cards */}
+            {/* Large Photo-First Dish Cards */}
             <div className="space-y-4">
               {activeDishes.map((dish, idx) => {
                 const stockUsed = getRecipeStockMatches(dish);
                 const dayPeople = effectiveSlotPeople[idx] ?? peopleCount;
                 const isCustomDay =
                   slotPeopleCounts[idx] !== null && slotPeopleCounts[idx] !== peopleCount;
+                const isFav = favoriteIds.includes(dish.id);
                 return (
                   <article
                     key={`${dish.id}-${idx}`}
@@ -1334,7 +1499,7 @@ export default function MacroBatchApp() {
                           {DAYS_FULL[idx]}
                         </span>
                         {isCustomDay && (
-                          <span className="bg-[#FF5A36] text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-xs">
+                          <span className="bg-[#F5B731] text-[#141414] text-[11px] font-bold px-2.5 py-1 rounded-full shadow-xs">
                             {dayPeople > peopleCount ? "Invités" : "Ajusté"}
                           </span>
                         )}
@@ -1344,17 +1509,34 @@ export default function MacroBatchApp() {
                           </span>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSwapSlotIndex(idx);
-                          setIsCatalogOpen(true);
-                        }}
-                        className="tap-scale absolute top-3 right-3 bg-white/95 backdrop-blur-xs text-[#1C1917] text-xs font-bold px-3 py-1 rounded-full shadow-xs cursor-pointer"
-                      >
-                        Changer
-                      </button>
+                      <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(dish.id);
+                          }}
+                          aria-label="Favori"
+                          className="tap-scale w-8 h-8 rounded-full bg-white/95 backdrop-blur-xs flex items-center justify-center shadow-xs cursor-pointer"
+                        >
+                          <Heart
+                            className={`w-4 h-4 ${
+                              isFav ? "fill-[#FF5A36] text-[#FF5A36]" : "text-[#141414]"
+                            }`}
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setQuickSwapDayIdx(idx);
+                          }}
+                          className="tap-scale bg-white/95 backdrop-blur-xs text-[#141414] text-xs font-bold px-3 py-1.5 rounded-full shadow-xs cursor-pointer flex items-center gap-1"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span>Échanger</span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="p-4 flex items-center justify-between gap-3">
@@ -1399,14 +1581,14 @@ export default function MacroBatchApp() {
               })}
             </div>
 
-            {/* Warm Primary CTA at end of menu */}
+            {/* Primary CTA at end of menu */}
             <button
               type="button"
               onClick={() => setTab("cart")}
-              className="tap-scale w-full py-3.5 rounded-2xl bg-[#FF5A36] hover:bg-[#e84f2e] text-white text-sm font-extrabold flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              className="tap-scale w-full py-3.5 rounded-2xl bg-[#141414] text-white text-sm font-extrabold flex items-center justify-center gap-2 shadow-sm cursor-pointer"
             >
               <span>Faire mes courses ({Math.max(0, totalGroceryCount - totalCheckedCount)} articles)</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4 text-[#F5B731]" />
             </button>
           </main>
         )}
@@ -1415,24 +1597,35 @@ export default function MacroBatchApp() {
             TAB 3: COURSES (AVEC SYNCHRO DU STOCK SCANNÉ)
             ================================================================ */}
         {tab === "cart" && (
-          <main className="px-4 pt-3 space-y-4">
-            {/* Grocery List Header */}
-            <div className="bg-white rounded-2xl p-4 border border-slate-200/80 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-extrabold text-[#0F172A]">
-                  Reste à acheter ({totalGroceryCount - totalCheckedCount})
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {totalCheckedCount} déjà en stock ou cochés • {totalWeeklyPortions} portions
-                </p>
+          <main className="px-4 pt-4 space-y-4">
+            {/* Grocery List Header (Budget + Share + Deductions) */}
+            <div className="bg-white rounded-3xl p-4 border border-[#EDE8E0] space-y-3 shadow-2xs">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h2 className="font-serif text-lg font-bold text-[#141414]">
+                    Reste à acheter ({Math.max(0, totalGroceryCount - totalCheckedCount)})
+                  </h2>
+                  <p className="text-xs text-stone-500 mt-0.5 font-mono-tabular">
+                    ~{estimatedWeeklyCost.toFixed(0)} € estimés / {weeklyBudget} € budget • {totalCheckedCount} en stock ou cochés
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={shareGroceryList}
+                  className="tap-scale px-3 py-1.5 rounded-full bg-[#141414] text-white text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-[#F5B731]" />
+                  <span>Partager</span>
+                </button>
               </div>
-              <div className="flex items-center gap-1.5">
+
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   type="button"
                   onClick={() => openScannerModal("frigo")}
-                  className="tap-scale px-3 py-1.5 rounded-full bg-[#0F172A] text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                  className="tap-scale px-3 py-1.5 rounded-full bg-[#FEF3C7] text-[#92400E] text-xs font-bold flex items-center gap-1 cursor-pointer"
                 >
-                  <Camera className="w-3.5 h-3.5 text-[#FF5A36]" />
+                  <Camera className="w-3.5 h-3.5" />
                   <span>Scan stock</span>
                 </button>
                 <button
@@ -1441,7 +1634,7 @@ export default function MacroBatchApp() {
                   className={`tap-scale px-3 py-1.5 rounded-full text-xs font-bold border cursor-pointer ${
                     deductPantry
                       ? "bg-[#ECFDF5] text-[#059669] border-[#059669]/30"
-                      : "bg-slate-50 text-slate-600 border-slate-200"
+                      : "bg-[#FAF8F5] text-stone-600 border-[#EDE8E0]"
                   }`}
                 >
                   {deductPantry ? "Épices déduites" : "Avec épices"}
@@ -1449,22 +1642,109 @@ export default function MacroBatchApp() {
               </div>
             </div>
 
+            {/* Add Custom Grocery Item (Yuma-inspired) */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newCartItemText}
+                onChange={(e) => setNewCartItemText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addCustomCartItem();
+                  }
+                }}
+                placeholder="Ajouter un article perso (café, sopalin...)"
+                className="flex-1 px-4 py-2.5 rounded-2xl bg-white border border-[#EDE8E0] text-xs text-[#141414] placeholder:text-stone-400 focus:outline-none focus:border-stone-400"
+              />
+              <button
+                type="button"
+                onClick={addCustomCartItem}
+                aria-label="Ajouter article"
+                className="tap-scale px-4 py-2.5 rounded-2xl bg-[#141414] text-white text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4 text-[#F5B731]" />
+                <span>Ajouter</span>
+              </button>
+            </div>
+
+            {/* Custom Personal Items Section */}
+            {customCartItems.length > 0 && (
+              <section className="bg-white rounded-3xl border border-[#EDE8E0] overflow-hidden">
+                <div className="px-4 py-2.5 bg-[#FEF3C7]/45 border-b border-[#EDE8E0] flex items-center justify-between">
+                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#92400E]">
+                    Articles perso
+                  </h3>
+                  <span className="text-xs font-bold text-[#92400E]">
+                    {customCartItems.length}
+                  </span>
+                </div>
+                <div className="divide-y divide-[#EDE8E0]/60">
+                  {customCartItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="px-4 py-3 flex items-center justify-between gap-2"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCustomCartItems((prev) =>
+                            prev.map((c) =>
+                              c.id === item.id ? { ...c, checked: !c.checked } : c
+                            )
+                          )
+                        }
+                        className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer"
+                      >
+                        <div
+                          className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                            item.checked
+                              ? "bg-[#059669] border-[#059669] text-white"
+                              : "border-stone-300 bg-white"
+                          }`}
+                        >
+                          {item.checked && <Check className="w-3.5 h-3.5" />}
+                        </div>
+                        <span
+                          className={`text-sm font-medium truncate ${
+                            item.checked ? "line-through text-stone-400" : "text-[#141414]"
+                          }`}
+                        >
+                          {item.name}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCustomCartItems((prev) => prev.filter((c) => c.id !== item.id))
+                        }
+                        aria-label="Supprimer article"
+                        className="w-7 h-7 rounded-full text-stone-400 hover:text-stone-700 flex items-center justify-center cursor-pointer shrink-0"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <div className="space-y-4">
               {groceryByAisle.map((group) => (
                 <section
                   key={group.aisle}
-                  className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden"
+                  className="bg-white rounded-3xl border border-[#EDE8E0] overflow-hidden"
                 >
-                  <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200/70 flex items-center justify-between">
-                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-600">
+                  <div className="px-4 py-2.5 bg-[#FAF8F5] border-b border-[#EDE8E0] flex items-center justify-between">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-stone-600">
                       {group.label}
                     </h3>
-                    <span className="text-xs font-bold text-slate-400">
+                    <span className="text-xs font-bold text-stone-400">
                       {group.items.length}
                     </span>
                   </div>
 
-                  <div className="divide-y divide-slate-100">
+                  <div className="divide-y divide-[#EDE8E0]/60">
                     {group.items.map((item) => {
                       const key = `${group.aisle}-${item.name}`;
                       const isChecked = Boolean(checkedGroceries[key]);
@@ -1479,14 +1759,14 @@ export default function MacroBatchApp() {
                               [key]: !prev[key],
                             }))
                           }
-                          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-50/70 cursor-pointer"
+                          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-[#FAF8F5] cursor-pointer"
                         >
                           <div className="flex items-center gap-3 min-w-0 pr-3">
                             <div
                               className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
                                 isChecked
                                   ? "bg-[#059669] border-[#059669] text-white"
-                                  : "border-slate-300 bg-white"
+                                  : "border-stone-300 bg-white"
                               }`}
                             >
                               {isChecked && <Check className="w-3.5 h-3.5" />}
@@ -1495,8 +1775,8 @@ export default function MacroBatchApp() {
                               <span
                                 className={`text-sm font-medium block truncate ${
                                   isChecked
-                                    ? "line-through text-slate-400"
-                                    : "text-[#0F172A]"
+                                    ? "line-through text-stone-400"
+                                    : "text-[#141414]"
                                 }`}
                               >
                                 {item.name}
@@ -1509,7 +1789,7 @@ export default function MacroBatchApp() {
                             </div>
                           </div>
 
-                          <span className="text-xs font-bold text-slate-600 font-mono-tabular shrink-0">
+                          <span className="text-xs font-bold text-stone-600 font-mono-tabular shrink-0">
                             {formatQty(item.qty, item.unit)}
                           </span>
                         </button>
@@ -2503,6 +2783,102 @@ export default function MacroBatchApp() {
       )}
 
       {/* ================================================================
+          YUMA-STYLE 3-IDEA QUICK SWAP MODAL
+          ================================================================ */}
+      {quickSwapDayIdx !== null && (
+        <div
+          onClick={() => setQuickSwapDayIdx(null)}
+          className="fixed inset-0 z-50 bg-[#141414]/60 backdrop-blur-xs flex items-end sm:items-center justify-center"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#FAF8F5] w-full max-w-[440px] rounded-t-3xl sm:rounded-3xl p-5 pb-safe space-y-4 shadow-2xl max-h-[88vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-3">
+              <div>
+                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] mb-1">
+                  <Sparkles className="w-3 h-3" />
+                  <span>3 idées au même budget</span>
+                </span>
+                <h2 className="font-serif text-lg font-bold text-[#141414]">
+                  Échanger {DAYS_FULL[quickSwapDayIdx]}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickSwapDayIdx(null)}
+                aria-label="Fermer"
+                className="w-8 h-8 rounded-full bg-white border border-[#EDE8E0] flex items-center justify-center text-stone-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {quickSwapOptions.map((option) => {
+                const stockMatches = getRecipeStockMatches(option);
+                const isFav = favoriteIds.includes(option.id);
+                return (
+                  <div
+                    key={option.id}
+                    className="bg-white border border-[#EDE8E0] rounded-2xl p-3 flex items-center gap-3 shadow-2xs"
+                  >
+                    <img
+                      src={option.image}
+                      alt={option.shortName}
+                      className="w-16 h-16 rounded-xl object-cover shrink-0 bg-stone-100"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="text-sm font-bold text-[#141414] truncate">
+                          {option.shortName}
+                        </h3>
+                        {isFav && (
+                          <Heart className="w-3.5 h-3.5 fill-[#FF5A36] text-[#FF5A36] shrink-0" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-stone-500 mt-0.5 font-mono-tabular">
+                        {getDishProtein(option)}g prot • {option.cost[budgetTier].toFixed(2).replace(".", ",")} € / part
+                      </p>
+                      {stockMatches.length > 0 && (
+                        <span className="inline-block mt-1 text-[10px] font-bold bg-[#ECFDF5] text-[#059669] px-2 py-0.5 rounded-full">
+                          {stockMatches.length} en stock
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        assignToDay(quickSwapDayIdx, option);
+                        setQuickSwapDayIdx(null);
+                      }}
+                      className="tap-scale px-3.5 py-2 rounded-xl bg-[#141414] text-white text-xs font-bold shrink-0 cursor-pointer"
+                    >
+                      Choisir
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const slot = quickSwapDayIdx;
+                setQuickSwapDayIdx(null);
+                setSwapSlotIndex(slot);
+                setIsCatalogOpen(true);
+              }}
+              className="w-full py-3 rounded-2xl bg-white border border-[#EDE8E0] text-xs font-bold text-[#141414] flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-stone-500" />
+              <span>Voir tout le catalogue</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
           RECIPE DETAIL MODAL SHEET
           ================================================================ */}
       {selectedRecipe && (
@@ -2520,6 +2896,20 @@ export default function MacroBatchApp() {
                 alt={selectedRecipe.name}
                 className="w-full h-full object-cover"
               />
+              <button
+                type="button"
+                onClick={() => toggleFavorite(selectedRecipe.id)}
+                aria-label="Ajouter aux favoris"
+                className="absolute top-3 left-3 w-8 h-8 rounded-full bg-white/95 flex items-center justify-center shadow-sm cursor-pointer"
+              >
+                <Heart
+                  className={`w-4 h-4 ${
+                    favoriteIds.includes(selectedRecipe.id)
+                      ? "fill-[#FF5A36] text-[#FF5A36]"
+                      : "text-[#141414]"
+                  }`}
+                />
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectedRecipe(null)}
