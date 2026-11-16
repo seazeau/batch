@@ -1212,29 +1212,20 @@ export default function MacroBatchApp() {
           </div>
 
           <div className="flex items-center gap-2">
-            {totalStockCount > 0 && (
-              <button
-                type="button"
-                onClick={() => openScannerModal("frigo", 2)}
-                className="tap-scale h-9 px-3 rounded-full bg-[#FEF3C7] border border-[#F5B731]/40 text-[#92400E] flex items-center gap-1.5 text-xs font-bold cursor-pointer"
-              >
-                <span>{totalStockCount} en stock</span>
-              </button>
-            )}
-
             <button
               type="button"
               onClick={() => setIsSettingsOpen(true)}
               aria-label="Préférences"
-              className="tap-scale w-9 h-9 rounded-full bg-white border border-[#E7E2DA] flex items-center justify-center text-[#1C1917] hover:bg-stone-50 cursor-pointer"
+              className="tap-scale h-9 px-3 rounded-full bg-white border border-[#E7E2DA] flex items-center gap-1.5 text-xs font-bold text-[#1C1917] hover:bg-stone-50 cursor-pointer"
             >
-              <SlidersHorizontal className="w-4 h-4" />
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>{SUPERMARKET_CONFIG[supermarket].label}</span>
             </button>
           </div>
         </header>
 
         {/* ================================================================
-            TAB 0: ACCUEIL (INSPIRÉ ZEST — LUMINEUX, CHALEUREUX, ÉVIDENT)
+            TAB 0: ACCUEIL (YUMABATCH — CLAIR, CHALEUREUX, SANS FRICTION)
             ================================================================ */}
         {tab === "home" && (
           <main className="px-4 pt-4 space-y-5">
@@ -1242,33 +1233,33 @@ export default function MacroBatchApp() {
             <section className="bg-[#FEF3C7] border border-[#F5B731]/35 rounded-3xl p-5 space-y-4 shadow-xs">
               <div className="space-y-1">
                 <span className="inline-block text-[11px] font-extrabold uppercase tracking-wider text-[#92400E] bg-[#FDE68A]/70 px-2.5 py-0.5 rounded-full">
-                  Zéro gaspillage
+                  Menus & Courses chiffrées
                 </span>
                 <h2 className="font-serif text-2xl font-bold text-[#1C1917] leading-tight pt-1">
-                  Cuisiner maintenant
+                  Ta semaine prête en 10 sec
                 </h2>
-                <p className="text-xs text-[#78350F]/80 leading-relaxed">
-                  Scanne ton frigo, ton placard ou un ticket de caisse pour adapter ton menu et déduire tes courses.
+                <p className="text-xs text-[#78350F]/85 leading-relaxed">
+                  {skippedDays.filter((s) => !s).length} dîners prévus pour {peopleCount} pers. •{" "}
+                  <strong className="font-mono-tabular">~{estimatedWeeklyCost.toFixed(0)} €</strong> estimés chez {SUPERMARKET_CONFIG[supermarket].label}.
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
-                  onClick={() => openScannerModal("frigo", 1)}
+                  onClick={() => setTab("menu")}
                   className="tap-scale py-3 px-4 rounded-2xl bg-[#141414] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-xs"
                 >
-                  <Camera className="w-4 h-4 text-[#FCD34D]" />
-                  <span>Scanner</span>
+                  <Calendar className="w-4 h-4 text-[#FCD34D]" />
+                  <span>Voir mon menu</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => openScannerModal("frigo", totalStockCount > 0 ? 2 : 1)}
+                  onClick={() => setIsSettingsOpen(true)}
                   className="tap-scale py-3 px-4 rounded-2xl bg-white text-[#1C1917] border border-[#E7E2DA] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <span>
-                    {totalStockCount > 0 ? `Mon stock (${totalStockCount})` : "Choisir à la main"}
-                  </span>
+                  <Wallet className="w-3.5 h-3.5 text-[#92400E]" />
+                  <span>Budget {weeklyBudget} €</span>
                 </button>
               </div>
             </section>
@@ -1380,156 +1371,57 @@ export default function MacroBatchApp() {
               </div>
             </section>
 
-            {/* Garde-manger / À consommer vite */}
+            {/* Accès rapides Courses & Batch */}
             <section className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <h3 className="font-serif text-lg font-bold text-[#1C1917]">
-                  Ton garde-manger
-                </h3>
+              <h3 className="font-serif text-lg font-bold text-[#1C1917]">
+                Prêt pour la semaine
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => openScannerModal("frigo", 1)}
-                  className="text-xs font-bold text-[#141414] cursor-pointer"
+                  onClick={() => setTab("cart")}
+                  className="tap-scale bg-white rounded-3xl border border-[#EDE8E0] p-4 text-left space-y-2 shadow-2xs cursor-pointer"
                 >
-                  + Mettre à jour
+                  <div className="w-9 h-9 rounded-2xl bg-[#FEF3C7] text-[#92400E] flex items-center justify-center">
+                    <ShoppingBag className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <strong className="text-sm font-bold text-[#141414] block">
+                      Mes courses
+                    </strong>
+                    <span className="text-xs text-stone-500 font-mono-tabular">
+                      {Math.max(0, totalGroceryCount - totalCheckedCount)} articles • ~{estimatedWeeklyCost.toFixed(0)} €
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTab("prep")}
+                  className="tap-scale bg-white rounded-3xl border border-[#EDE8E0] p-4 text-left space-y-2 shadow-2xs cursor-pointer"
+                >
+                  <div className="w-9 h-9 rounded-2xl bg-[#141414] text-[#F5B731] flex items-center justify-center">
+                    <ChefHat className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <strong className="text-sm font-bold text-[#141414] block">
+                      Cuisiner
+                    </strong>
+                    <span className="text-xs text-stone-500 font-mono-tabular">
+                      Batch {totalBatchMinutes} min • {dynamicBatchTimeline.length} étapes
+                    </span>
+                  </div>
                 </button>
               </div>
-
-              {totalStockCount > 0 ? (
-                <div className="bg-white rounded-3xl border border-[#EDE8E0] p-4 space-y-3 shadow-xs">
-                  <div className="flex flex-wrap gap-1.5">
-                    {allStockPresets
-                      .filter((p) => inStockIds.includes(p.id))
-                      .map((p) => (
-                        <span
-                          key={p.id}
-                          className="px-3 py-1.5 rounded-full bg-[#FEF3C7]/70 text-[#78350F] text-xs font-bold border border-[#F5B731]/30"
-                        >
-                          {p.label}
-                        </span>
-                      ))}
-                    {customStockTerms.map((term) => (
-                      <span
-                        key={term}
-                        className="px-3 py-1.5 rounded-full bg-[#ECFDF5] text-[#065F46] text-xs font-bold border border-[#059669]/25"
-                      >
-                        {term}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-between pt-2 border-t border-[#F3EFE8]">
-                    <span className="text-xs text-[#78716C]">
-                      Déduits automatiquement de tes courses
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => openScannerModal("frigo", 2)}
-                      className="text-xs font-bold text-[#141414] cursor-pointer"
-                    >
-                      Modifier
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-white rounded-3xl border border-[#EDE8E0] p-4 space-y-3 shadow-xs">
-                  <p className="text-xs text-[#78716C]">
-                    Ajoute ce que tu as sous la main en 1 photo :
-                  </p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { zone: "frigo" as const, label: "Frigo", icon: Camera },
-                      { zone: "placard" as const, label: "Placard", icon: Utensils },
-                      { zone: "ticket" as const, label: "Ticket", icon: Receipt },
-                    ].map((z) => {
-                      const ZIcon = z.icon;
-                      return (
-                        <button
-                          key={z.zone}
-                          type="button"
-                          onClick={() => openScannerModal(z.zone, 1)}
-                          className="tap-scale py-3 px-2 rounded-2xl bg-[#FAF8F5] hover:bg-[#FEF3C7]/50 border border-[#EDE8E0] flex flex-col items-center gap-1.5 cursor-pointer"
-                        >
-                          <ZIcon className="w-4 h-4 text-[#D97706]" />
-                          <span className="text-xs font-bold text-[#1C1917]">{z.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </section>
           </main>
         )}
 
         {/* ================================================================
-            TAB 1: SEMAINE (STYLE JOW / FRICHTI — LUMINEUX & GOURMAND)
+            TAB 1: SEMAINE (YUMA + BATCH — CLAIR & IMMÉDIAT)
             ================================================================ */}
         {tab === "menu" && (
           <main className="px-4 pt-4 space-y-5">
-            {/* Scan Frigo & Placard Card */}
-            {totalStockCount > 0 ? (
-              <div className="bg-[#ECFDF5] border border-[#059669]/25 rounded-3xl p-3.5 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-2xl bg-[#059669] text-white flex items-center justify-center shrink-0">
-                    <Camera className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <strong className="text-xs font-extrabold text-[#065F46] block truncate">
-                      {totalStockCount} ingrédient{totalStockCount > 1 ? "s" : ""} du frigo utilisé{totalStockCount > 1 ? "s" : ""}
-                    </strong>
-                    <span className="text-[11px] text-[#059669] block truncate">
-                      Déduits automatiquement des courses
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => openScannerModal("frigo")}
-                    className="tap-scale px-3 py-1.5 rounded-full bg-white text-[#065F46] text-xs font-bold border border-[#059669]/20 cursor-pointer"
-                  >
-                    Modifier
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInStockIds([]);
-                      setCustomStockTerms([]);
-                      setScanPhotoPreview(null);
-                      setVisionSummary(null);
-                      showToast("Stock réinitialisé");
-                    }}
-                    className="tap-scale w-8 h-8 rounded-full bg-white/80 text-stone-500 flex items-center justify-center cursor-pointer"
-                    aria-label="Effacer le stock"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => openScannerModal("frigo")}
-                className="tap-scale w-full bg-white border border-[#EDE8E0] hover:border-[#FF5A36]/40 rounded-3xl p-3.5 flex items-center justify-between gap-3 text-left shadow-xs cursor-pointer"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-11 h-11 rounded-2xl bg-[#FFF1EE] text-[#FF5A36] flex items-center justify-center shrink-0">
-                    <Camera className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <strong className="text-sm font-bold text-[#1C1917] block">
-                      Cuisiner avec ton frigo
-                    </strong>
-                    <span className="text-xs text-[#78716C] block truncate">
-                      Prends une photo, on adapte ton menu
-                    </span>
-                  </div>
-                </div>
-                <span className="px-3.5 py-2 rounded-full bg-[#FFF1EE] text-[#FF5A36] text-xs font-bold shrink-0">
-                  Scanner
-                </span>
-              </button>
-            )}
 
             {/* Yuma-Style Week Switcher (Cette semaine / Semaine prochaine) */}
             <div className="bg-white border border-[#EDE8E0] rounded-2xl p-1.5 flex items-center justify-between">
@@ -2259,43 +2151,12 @@ export default function MacroBatchApp() {
         )}
 
         {/* ================================================================
-            BOTTOM TAB BAR (ACCUEIL • SEMAINE • [SCAN] • COURSES • CUISINER)
+            BOTTOM TAB BAR (ACCUEIL • SEMAINE • COURSES • CUISINER)
             ================================================================ */}
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[440px] z-40 bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-2 pt-2 pb-safe grid grid-cols-5 items-end">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[440px] z-40 bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-2 pt-2 pb-safe grid grid-cols-4 items-center">
           {[
             { id: "home", label: "Accueil", icon: Home, badge: 0 },
             { id: "menu", label: "Semaine", icon: Calendar, badge: 0 },
-          ].map((item) => {
-            const Icon = item.icon;
-            const isActive = tab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTab(item.id as TabKey)}
-                className={`tap-scale relative flex flex-col items-center gap-1 py-1 rounded-xl cursor-pointer transition-colors ${
-                  isActive ? "text-[#141414]" : "text-stone-400 hover:text-stone-700"
-                }`}
-              >
-                <Icon className={`w-5 h-5 ${isActive ? "stroke-[2.4]" : ""}`} />
-                <span className="text-[11px] font-bold">{item.label}</span>
-              </button>
-            );
-          })}
-
-          {/* Central Round Scan CTA */}
-          <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={() => openScannerModal("frigo", 1)}
-              aria-label="Scanner frigo, placard ou ticket"
-              className="tap-scale -mt-4 w-12 h-12 rounded-full bg-[#141414] text-[#FCD34D] flex items-center justify-center shadow-lg border-4 border-[#FAF8F5] cursor-pointer"
-            >
-              <Camera className="w-5 h-5" />
-            </button>
-          </div>
-
-          {[
             {
               id: "cart",
               label: "Courses",
