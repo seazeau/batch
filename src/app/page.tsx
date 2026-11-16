@@ -39,6 +39,24 @@ type DietMode = "omni" | "vege" | "pesco";
 type ProtProfile = 110 | 130 | 160;
 type BudgetTier = "eco" | "std" | "gourmet";
 type PrepSubMode = "batch" | "recipes";
+type SupermarketKey = "lidl" | "leclerc" | "intermarche" | "auchan" | "carrefour" | "monoprix";
+type SkillLevel = "facile" | "normal" | "avance";
+
+const SUPERMARKET_CONFIG: Record<SupermarketKey, { label: string; mult: number }> = {
+  lidl: { label: "Lidl", mult: 0.85 },
+  leclerc: { label: "E.Leclerc", mult: 0.94 },
+  intermarche: { label: "Intermarché", mult: 1.0 },
+  auchan: { label: "Auchan", mult: 1.02 },
+  carrefour: { label: "Carrefour", mult: 1.06 },
+  monoprix: { label: "Monoprix", mult: 1.22 },
+};
+
+const AVOID_OPTIONS = [
+  { id: "lactose", label: "Sans lactose" },
+  { id: "porc", label: "Sans porc" },
+  { id: "fruits_mer", label: "Sans fruits de mer" },
+  { id: "noix", label: "Sans noix" },
+];
 
 const DAYS_FULL = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
 const DAYS_SHORT = ["Lun", "Mar", "Mer", "Jeu", "Ven"];
@@ -191,6 +209,20 @@ export default function MacroBatchApp() {
   >([]);
   const [newCartItemText, setNewCartItemText] = useState<string>("");
   const [quickSwapDayIdx, setQuickSwapDayIdx] = useState<number | null>(null);
+  const [supermarket, setSupermarket] = useState<SupermarketKey>("leclerc");
+  const [skillLevel, setSkillLevel] = useState<SkillLevel>("facile");
+  const [avoidList, setAvoidList] = useState<string[]>([]);
+  const [weekOffset, setWeekOffset] = useState<0 | 1>(0);
+  const [nextWeekSlots, setNextWeekSlots] = useState<string[]>(() =>
+    RECIPE_DATABASE.slice(5, 10).map((r) => r.id)
+  );
+  const [skippedDays, setSkippedDays] = useState<boolean[]>([
+    false,
+    false,
+    false,
+    false,
+    false,
+  ]);
 
   // Load saved state on mount
   useEffect(() => {
@@ -207,8 +239,19 @@ export default function MacroBatchApp() {
         if (parsed.diet) setDiet(parsed.diet);
         if (parsed.budgetTier) setBudgetTier(parsed.budgetTier);
         if (typeof parsed.weeklyBudget === "number") setWeeklyBudget(parsed.weeklyBudget);
+        if (parsed.supermarket && parsed.supermarket in SUPERMARKET_CONFIG) {
+          setSupermarket(parsed.supermarket);
+        }
+        if (parsed.skillLevel) setSkillLevel(parsed.skillLevel);
+        if (Array.isArray(parsed.avoidList)) setAvoidList(parsed.avoidList);
         if (Array.isArray(parsed.weekSlots) && parsed.weekSlots.length === 5) {
           setWeekSlots(parsed.weekSlots);
+        }
+        if (Array.isArray(parsed.nextWeekSlots) && parsed.nextWeekSlots.length === 5) {
+          setNextWeekSlots(parsed.nextWeekSlots);
+        }
+        if (Array.isArray(parsed.skippedDays) && parsed.skippedDays.length === 5) {
+          setSkippedDays(parsed.skippedDays);
         }
         if (Array.isArray(parsed.inStockIds)) setInStockIds(parsed.inStockIds);
         if (Array.isArray(parsed.customStockTerms)) setCustomStockTerms(parsed.customStockTerms);
@@ -236,7 +279,12 @@ export default function MacroBatchApp() {
           diet,
           budgetTier,
           weeklyBudget,
+          supermarket,
+          skillLevel,
+          avoidList,
           weekSlots,
+          nextWeekSlots,
+          skippedDays,
           inStockIds,
           customStockTerms,
           favoriteIds,
@@ -257,7 +305,12 @@ export default function MacroBatchApp() {
     diet,
     budgetTier,
     weeklyBudget,
+    supermarket,
+    skillLevel,
+    avoidList,
     weekSlots,
+    nextWeekSlots,
+    skippedDays,
     inStockIds,
     customStockTerms,
     favoriteIds,
@@ -329,12 +382,14 @@ export default function MacroBatchApp() {
     return Math.round(base * (weightKg / 72));
   };
 
+  const currentWeekSlots = weekOffset === 0 ? weekSlots : nextWeekSlots;
+
   // Active dishes for the 5 days
   const activeDishes = useMemo(() => {
-    return weekSlots
+    return currentWeekSlots
       .map((id) => RECIPE_DATABASE.find((r) => r.id === id))
       .filter((r): r is Recipe => Boolean(r));
-  }, [weekSlots]);
+  }, [currentWeekSlots]);
 
   const avgProtPerMeal = useMemo(() => {
     if (activeDishes.length === 0) return 0;
@@ -342,18 +397,21 @@ export default function MacroBatchApp() {
     return Math.round(sum / activeDishes.length);
   }, [activeDishes, protProfile, weightKg]);
 
+  const supermarketMult = SUPERMARKET_CONFIG[supermarket].mult;
+
   const avgCostPerMeal = useMemo(() => {
     if (activeDishes.length === 0) return 0;
-    const sum = activeDishes.reduce((acc, d) => acc + d.cost[budgetTier], 0);
+    const sum = activeDishes.reduce((acc, d) => acc + d.cost[budgetTier] * supermarketMult, 0);
     return sum / activeDishes.length;
-  }, [activeDishes, budgetTier]);
+  }, [activeDishes, budgetTier, supermarketMult]);
 
   const estimatedWeeklyCost = useMemo(() => {
     return activeDishes.reduce((acc, dish, idx) => {
+      if (skippedDays[idx]) return acc;
       const portions = (effectiveSlotPeople[idx] ?? peopleCount) * 2;
-      return acc + dish.cost[budgetTier] * portions;
+      return acc + dish.cost[budgetTier] * supermarketMult * portions;
     }, 0);
-  }, [activeDishes, effectiveSlotPeople, peopleCount, budgetTier]);
+  }, [activeDishes, effectiveSlotPeople, peopleCount, budgetTier, supermarketMult, skippedDays]);
 
   const toggleFavorite = (recipeId: string) => {
     setFavoriteIds((prev) => {
@@ -624,9 +682,17 @@ export default function MacroBatchApp() {
   }, [diet, categoryFilter, searchQuery, budgetTier, inStockIds, customStockTerms, totalStockCount]);
 
   const assignToDay = (dayIdx: number, recipe: Recipe) => {
-    setWeekSlots((prev) => {
+    const updater = (prev: string[]) => {
       const next = [...prev];
       next[dayIdx] = recipe.id;
+      return next;
+    };
+    if (weekOffset === 0) setWeekSlots(updater);
+    else setNextWeekSlots(updater);
+    setSkippedDays((prev) => {
+      if (!prev[dayIdx]) return prev;
+      const next = [...prev];
+      next[dayIdx] = false;
       return next;
     });
     setSwapSlotIndex(null);
@@ -651,6 +717,7 @@ export default function MacroBatchApp() {
     >();
 
     activeDishes.forEach((dish, dayIdx) => {
+      if (skippedDays[dayIdx]) return;
       const portionsPerDish = (effectiveSlotPeople[dayIdx] ?? peopleCount) * 2;
       dish.ingredients.forEach((ing) => {
         if (deductPantry && ing.isPantry) return;
@@ -677,7 +744,7 @@ export default function MacroBatchApp() {
         .sort((a, b) => a.name.localeCompare(b.name));
       return { aisle, label: AISLE_LABELS[aisle], items };
     }).filter((g) => g.items.length > 0);
-  }, [activeDishes, peopleCount, effectiveSlotPeople, deductPantry]);
+  }, [activeDishes, peopleCount, effectiveSlotPeople, deductPantry, skippedDays]);
 
   const shareGroceryList = async () => {
     const lines: string[] = [
@@ -1397,6 +1464,36 @@ export default function MacroBatchApp() {
               </button>
             )}
 
+            {/* Yuma-Style Week Switcher (Cette semaine / Semaine prochaine) */}
+            <div className="bg-white border border-[#EDE8E0] rounded-2xl p-1.5 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setWeekOffset(0)}
+                disabled={weekOffset === 0}
+                aria-label="Semaine en cours"
+                className="w-8 h-8 rounded-xl bg-[#FAF8F5] flex items-center justify-center text-[#141414] disabled:opacity-30 cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <div className="text-center">
+                <span className="text-xs font-extrabold text-[#141414] block">
+                  {weekOffset === 0 ? "Cette semaine" : "Semaine prochaine"}
+                </span>
+                <span className="text-[10px] font-semibold text-stone-500">
+                  {skippedDays.filter((s) => !s).length} dîners prévus • {SUPERMARKET_CONFIG[supermarket].label}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWeekOffset(1)}
+                disabled={weekOffset === 1}
+                aria-label="Semaine prochaine"
+                className="w-8 h-8 rounded-xl bg-[#FAF8F5] flex items-center justify-center text-[#141414] disabled:opacity-30 cursor-pointer"
+              >
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+
             {/* Yuma-Inspired Weekly Budget Gauge */}
             <div className="bg-white border border-[#EDE8E0] rounded-3xl p-4 space-y-2.5 shadow-2xs">
               <div className="flex items-center justify-between gap-2">
@@ -1405,9 +1502,13 @@ export default function MacroBatchApp() {
                     <Wallet className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">
-                      Budget de la semaine
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsSettingsOpen(true)}
+                      className="text-[11px] font-bold uppercase tracking-wider text-stone-400 hover:text-[#141414] block text-left cursor-pointer"
+                    >
+                      Budget {SUPERMARKET_CONFIG[supermarket].label} ▾
+                    </button>
                     <div className="flex items-baseline gap-1.5">
                       <strong className="text-base font-extrabold text-[#141414] font-mono-tabular">
                         ~{estimatedWeeklyCost.toFixed(0)} €
@@ -1456,7 +1557,7 @@ export default function MacroBatchApp() {
             {/* Section Title */}
             <div className="flex items-center justify-between">
               <h2 className="font-serif text-xl font-bold text-[#1C1917]">
-                Au menu cette semaine
+                Au menu
               </h2>
               {hasCustomDayPeople && (
                 <button
@@ -1475,6 +1576,36 @@ export default function MacroBatchApp() {
             {/* Large Photo-First Dish Cards */}
             <div className="space-y-4">
               {activeDishes.map((dish, idx) => {
+                const isSkipped = Boolean(skippedDays[idx]);
+                if (isSkipped) {
+                  return (
+                    <div
+                      key={`skipped-${idx}`}
+                      className="bg-white/70 border border-dashed border-[#D6D0C4] rounded-3xl p-4 flex items-center justify-between"
+                    >
+                      <div>
+                        <span className="text-xs font-extrabold text-[#141414] block">
+                          {DAYS_FULL[idx]} • Pas de cuisine ce soir
+                        </span>
+                        <span className="text-[11px] text-stone-500">
+                          Ingrédients déduits de vos courses et du budget
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSkippedDays((prev) =>
+                            prev.map((s, i) => (i === idx ? false : s))
+                          )
+                        }
+                        className="px-3 py-1.5 rounded-full bg-[#141414] text-white text-xs font-bold cursor-pointer"
+                      >
+                        Réactiver
+                      </button>
+                    </div>
+                  );
+                }
+
                 const stockUsed = getRecipeStockMatches(dish);
                 const dayPeople = effectiveSlotPeople[idx] ?? peopleCount;
                 const isCustomDay =
@@ -1544,9 +1675,23 @@ export default function MacroBatchApp() {
                         <h3 className="font-serif text-lg font-bold text-[#1C1917] truncate leading-snug">
                           {dish.shortName}
                         </h3>
-                        <p className="text-xs text-[#78716C] mt-0.5 font-mono-tabular">
-                          {getDishProtein(dish)}g prot • {dish.cost[budgetTier].toFixed(2).replace(".", ",")} € / part
-                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-xs text-[#78716C] font-mono-tabular">
+                            {getDishProtein(dish)}g prot • {(dish.cost[budgetTier] * supermarketMult).toFixed(2).replace(".", ",")} € / part
+                          </p>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSkippedDays((prev) =>
+                                prev.map((s, i) => (i === idx ? true : s))
+                              );
+                            }}
+                            className="text-[11px] font-semibold text-stone-400 hover:text-stone-700 underline cursor-pointer"
+                          >
+                            Sauter
+                          </button>
+                        </div>
                       </div>
 
                       <div
@@ -3016,37 +3161,84 @@ export default function MacroBatchApp() {
       )}
 
       {/* ================================================================
-          SETTINGS DRAWER (DISCREET PERSONALIZATION)
+          SETTINGS DRAWER (YUMA + NUTRITION PREFERENCES)
           ================================================================ */}
       {isSettingsOpen && (
         <div
           onClick={() => setIsSettingsOpen(false)}
-          className="fixed inset-0 z-50 bg-[#0F172A]/50 backdrop-blur-xs flex items-end sm:items-center justify-center"
+          className="fixed inset-0 z-50 bg-[#141414]/60 backdrop-blur-xs flex items-end sm:items-center justify-center"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white w-full max-w-[440px] rounded-t-3xl sm:rounded-3xl p-5 space-y-5 shadow-2xl"
+            className="bg-[#FAF8F5] w-full max-w-[440px] rounded-t-3xl sm:rounded-3xl p-5 pb-safe space-y-5 shadow-2xl max-h-[88vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-3">
               <div>
-                <h2 className="text-base font-extrabold text-[#0F172A]">
-                  Préférences nutritionnelles
+                <h2 className="font-serif text-lg font-bold text-[#141414]">
+                  Mon foyer & Préférences
                 </h2>
-                <p className="text-xs text-slate-500">
-                  Calibre vos apports et filtre le catalogue
+                <p className="text-xs text-stone-500">
+                  Calibre vos prix, vos menus et vos objectifs
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsSettingsOpen(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 cursor-pointer"
+                aria-label="Fermer"
+                className="w-8 h-8 rounded-full bg-white border border-[#EDE8E0] flex items-center justify-center text-stone-600 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
+            {/* Supermarché (Yuma) */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 block">
+              <label className="text-xs font-bold text-stone-700 block">
+                Votre supermarché (calibre l’estimation des prix)
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(Object.keys(SUPERMARKET_CONFIG) as SupermarketKey[]).map((key) => {
+                  const active = supermarket === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setSupermarket(key)}
+                      className={`tap-scale py-2 px-2 rounded-xl border text-xs font-bold cursor-pointer ${
+                        active
+                          ? "bg-[#141414] text-white border-[#141414]"
+                          : "bg-white text-stone-700 border-[#EDE8E0]"
+                      }`}
+                    >
+                      {SUPERMARKET_CONFIG[key].label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Budget hebdo slider (Yuma) */}
+            <div className="bg-white p-3.5 rounded-2xl border border-[#EDE8E0] space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-stone-600">Budget semaine cible</span>
+                <span className="text-sm font-extrabold text-[#141414] font-mono-tabular">
+                  {weeklyBudget} € / sem.
+                </span>
+              </div>
+              <input
+                type="range"
+                min={25}
+                max={180}
+                step={5}
+                value={weeklyBudget}
+                onChange={(e) => setWeeklyBudget(Number(e.target.value))}
+                className="w-full accent-[#141414] cursor-pointer"
+              />
+            </div>
+
+            {/* Personnes par défaut */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-stone-700 block">
                 Personnes par défaut (ajustable par jour dans Semaine)
               </label>
               <div className="grid grid-cols-3 gap-2">
@@ -3060,8 +3252,8 @@ export default function MacroBatchApp() {
                     }}
                     className={`tap-scale py-2 rounded-xl border text-xs font-bold cursor-pointer ${
                       peopleCount === p
-                        ? "bg-[#0F172A] text-white border-[#0F172A]"
-                        : "bg-slate-50 text-slate-700 border-slate-200"
+                        ? "bg-[#141414] text-white border-[#141414]"
+                        : "bg-white text-stone-700 border-[#EDE8E0]"
                     }`}
                   >
                     {p} {p > 1 ? "personnes" : "personne"}
@@ -3070,83 +3262,36 @@ export default function MacroBatchApp() {
               </div>
             </div>
 
+            {/* Niveau en cuisine (Yuma) */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 block">
-                Profil d'activité
+              <label className="text-xs font-bold text-stone-700 block">
+                Niveau de recette
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { id: 110, label: "Actif", mult: "1.5g/kg", icon: Activity },
-                  { id: 130, label: "Sportif", mult: "1.8g/kg", icon: Zap },
-                  { id: 160, label: "Athlète", mult: "2.2g/kg", icon: Dumbbell },
-                ].map((p) => {
-                  const Icon = p.icon;
-                  const active = protProfile === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setProtProfile(p.id as ProtProfile)}
-                      className={`tap-scale p-3 rounded-2xl border text-left cursor-pointer ${
-                        active
-                          ? "bg-[#0F172A] text-white border-[#0F172A]"
-                          : "bg-slate-50 text-slate-700 border-slate-200"
-                      }`}
-                    >
-                      <Icon
-                        className={`w-4 h-4 mb-1.5 ${
-                          active ? "text-[#FF5A36]" : "text-slate-500"
-                        }`}
-                      />
-                      <strong className="text-xs font-bold block">{p.label}</strong>
-                      <span
-                        className={`text-[11px] ${
-                          active ? "text-slate-300" : "text-slate-500"
-                        }`}
-                      >
-                        {p.mult}
-                      </span>
-                    </button>
-                  );
-                })}
+                  { id: "facile" as const, label: "Facile" },
+                  { id: "normal" as const, label: "Normal" },
+                  { id: "avance" as const, label: "Avancé" },
+                ].map((lvl) => (
+                  <button
+                    key={lvl.id}
+                    type="button"
+                    onClick={() => setSkillLevel(lvl.id)}
+                    className={`tap-scale py-2 rounded-xl border text-xs font-bold cursor-pointer ${
+                      skillLevel === lvl.id
+                        ? "bg-[#FEF3C7] text-[#92400E] border-[#F5B731]"
+                        : "bg-white text-stone-700 border-[#EDE8E0]"
+                    }`}
+                  >
+                    {lvl.label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-600">Poids de corps</span>
-                <span className="text-sm font-extrabold text-[#0F172A] font-mono-tabular">
-                  {weightKg} kg • Cible {targetDailyProtG}g/j
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setWeightKg((w) => Math.max(45, w - 1))}
-                  className="tap-scale w-9 h-9 rounded-xl bg-white border border-slate-200 font-bold text-base cursor-pointer"
-                >
-                  −
-                </button>
-                <input
-                  type="range"
-                  min={45}
-                  max={120}
-                  value={weightKg}
-                  onChange={(e) => setWeightKg(Number(e.target.value))}
-                  className="flex-1 accent-[#FF5A36] cursor-pointer"
-                />
-                <button
-                  type="button"
-                  onClick={() => setWeightKg((w) => Math.min(120, w + 1))}
-                  className="tap-scale w-9 h-9 rounded-xl bg-white border border-slate-200 font-bold text-base cursor-pointer"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
+            {/* Régime alimentaire & Aliments à éviter */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 block">
+              <label className="text-xs font-bold text-stone-700 block">
                 Régime alimentaire
               </label>
               <div className="grid grid-cols-3 gap-2">
@@ -3164,8 +3309,8 @@ export default function MacroBatchApp() {
                       onClick={() => handleDietChange(d.id as DietMode)}
                       className={`tap-scale py-2.5 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
                         active
-                          ? "bg-[#0F172A] text-white border-[#0F172A]"
-                          : "bg-slate-50 text-slate-700 border-slate-200"
+                          ? "bg-[#141414] text-white border-[#141414]"
+                          : "bg-white text-stone-700 border-[#EDE8E0]"
                       }`}
                     >
                       <Icon className="w-3.5 h-3.5" />
@@ -3174,39 +3319,114 @@ export default function MacroBatchApp() {
                   );
                 })}
               </div>
+
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {AVOID_OPTIONS.map((opt) => {
+                  const active = avoidList.includes(opt.id);
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() =>
+                        setAvoidList((prev) =>
+                          prev.includes(opt.id)
+                            ? prev.filter((x) => x !== opt.id)
+                            : [...prev, opt.id]
+                        )
+                      }
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold border cursor-pointer ${
+                        active
+                          ? "bg-[#FEF3C7] text-[#92400E] border-[#F5B731]"
+                          : "bg-white text-stone-600 border-[#EDE8E0]"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
+            {/* Profil d'activité */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 block">
-                Budget par portion
+              <label className="text-xs font-bold text-stone-700 block">
+                Profil d&apos;activité & Protéines
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { id: "eco", label: "Malin", sub: "< 2,50€" },
-                  { id: "std", label: "Équilibré", sub: "~2,85€" },
-                  { id: "gourmet", label: "Gourmet", sub: "~3,40€" },
-                ].map((b) => (
-                  <button
-                    key={b.id}
-                    type="button"
-                    onClick={() => setBudgetTier(b.id as BudgetTier)}
-                    className={`tap-scale py-2 px-2 rounded-xl border text-center cursor-pointer ${
-                      budgetTier === b.id
-                        ? "bg-[#059669] text-white border-[#059669]"
-                        : "bg-slate-50 text-slate-700 border-slate-200"
-                    }`}
-                  >
-                    <strong className="text-xs font-bold block">{b.label}</strong>
-                    <span className="text-[11px] opacity-80">{b.sub}</span>
-                  </button>
-                ))}
+                  { id: 110, label: "Actif", mult: "1.5g/kg", icon: Activity },
+                  { id: 130, label: "Sportif", mult: "1.8g/kg", icon: Zap },
+                  { id: 160, label: "Athlète", mult: "2.2g/kg", icon: Dumbbell },
+                ].map((p) => {
+                  const Icon = p.icon;
+                  const active = protProfile === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setProtProfile(p.id as ProtProfile)}
+                      className={`tap-scale p-3 rounded-2xl border text-left cursor-pointer ${
+                        active
+                          ? "bg-[#141414] text-white border-[#141414]"
+                          : "bg-white text-stone-700 border-[#EDE8E0]"
+                      }`}
+                    >
+                      <Icon
+                        className={`w-4 h-4 mb-1.5 ${
+                          active ? "text-[#F5B731]" : "text-stone-500"
+                        }`}
+                      />
+                      <strong className="text-xs font-bold block">{p.label}</strong>
+                      <span
+                        className={`text-[11px] ${
+                          active ? "text-stone-300" : "text-stone-500"
+                        }`}
+                      >
+                        {p.mult}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-2xl border border-[#EDE8E0] space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-stone-600">Poids de corps</span>
+                <span className="text-sm font-extrabold text-[#141414] font-mono-tabular">
+                  {weightKg} kg • Cible {targetDailyProtG}g/j
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setWeightKg((w) => Math.max(45, w - 1))}
+                  className="tap-scale w-9 h-9 rounded-xl bg-[#FAF8F5] border border-[#EDE8E0] font-bold text-base cursor-pointer"
+                >
+                  −
+                </button>
+                <input
+                  type="range"
+                  min={45}
+                  max={120}
+                  value={weightKg}
+                  onChange={(e) => setWeightKg(Number(e.target.value))}
+                  className="flex-1 accent-[#141414] cursor-pointer"
+                />
+                <button
+                  type="button"
+                  onClick={() => setWeightKg((w) => Math.min(120, w + 1))}
+                  className="tap-scale w-9 h-9 rounded-xl bg-[#FAF8F5] border border-[#EDE8E0] font-bold text-base cursor-pointer"
+                >
+                  +
+                </button>
               </div>
             </div>
 
             <button
               type="button"
               onClick={() => setIsSettingsOpen(false)}
-              className="tap-scale w-full py-3 bg-[#1C1917] text-white rounded-2xl text-sm font-bold cursor-pointer"
+              className="tap-scale w-full py-3.5 bg-[#141414] text-white rounded-2xl text-sm font-bold cursor-pointer"
             >
               Appliquer
             </button>
