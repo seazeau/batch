@@ -46,7 +46,7 @@ const PRESET_CATALOG = [
 interface ScanRequestBody {
   imageBase64?: string;
   mimeType?: string;
-  zone?: 'fridge' | 'pantry';
+  zone?: 'fridge' | 'pantry' | 'receipt';
   apiKey?: string;
   colorStats?: {
     greenRatio?: number;
@@ -83,8 +83,15 @@ export async function POST(request: Request) {
       ''
     ).trim();
 
-    const systemPrompt = `Tu es un assistant culinaire expert en reconnaissance visuelle d'ingrédients dans un frigo ou un placard.
-Observe attentivement toute la photo (${zone === 'fridge' ? 'Frigo / Produits frais' : 'Placard / Épicerie sèche'}), y compris les emballages, bocaux, légumes, viandes, produits laitiers et condiments visibles même partiellement.
+    const zoneDescription =
+      zone === 'receipt'
+        ? 'Ticket de caisse de supermarché (lis les lignes de produits alimentaires achetés et ignore les articles non-alimentaires comme sacs, lessive, papier)'
+        : zone === 'fridge'
+        ? 'Frigo / Produits frais'
+        : 'Placard / Épicerie sèche';
+
+    const systemPrompt = `Tu es un assistant culinaire expert en reconnaissance visuelle d'ingrédients alimentaires.
+Observe attentivement toute la photo (${zoneDescription}), y compris les emballages, bocaux, légumes, viandes, produits laitiers, condiments ou lignes de ticket de caisse.
 Renvoie UNIQUEMENT un objet JSON valide avec cette structure exacte :
 {
   "detectedPresetIds": ["id1", "id2"],
@@ -95,7 +102,7 @@ Renvoie UNIQUEMENT un objet JSON valide avec cette structure exacte :
 Voici la liste des IDs prédéfinis autorisés dans "detectedPresetIds" (utilise ces IDs dès qu'un aliment correspond) :
 ${PRESET_CATALOG.map((p) => `- "${p.id}" (${p.label})`).join('\n')}
 
-Pour tous les autres aliments ou ingrédients visibles qui ne sont pas dans la liste ci-dessus (ex: "Saumon", "Poivron", "Épinards", "Thon", "Pâtes", "Beurre", "Lait", "Crème fraîche", "Jambon", "Pomme"), ajoute-les en français au singulier dans "customIngredients" (jusqu'à 15 ingrédients). Si la photo est floue ou vide, renvoie des tableaux vides et explique-le dans "summary".`;
+Pour tous les autres aliments ou ingrédients visibles qui ne sont pas dans la liste ci-dessus (ex: "Saumon", "Poivron", "Épinards", "Thon", "Pâtes", "Beurre", "Lait", "Crème fraîche", "Jambon", "Pomme"), ajoute-les en français au singulier dans "customIngredients" (jusqu'à 15 ingrédients). Si l'image est illisible ou vide, renvoie des tableaux vides et explique-le dans "summary".`;
 
     let aiError: string | null = null;
 

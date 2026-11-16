@@ -23,10 +23,14 @@ import {
   Image as ImageIcon,
   Mic,
   ArrowRight,
+  ArrowLeft,
+  Minus,
+  Home,
+  Receipt,
 } from "lucide-react";
 import { RECIPE_DATABASE, Recipe, SupermarketAisle } from "@/data/recipeDatabase";
 
-type TabKey = "menu" | "cart" | "prep";
+type TabKey = "home" | "menu" | "cart" | "prep";
 type DietMode = "omni" | "vege" | "pesco";
 type ProtProfile = 110 | 130 | 160;
 type BudgetTier = "eco" | "std" | "gourmet";
@@ -89,7 +93,7 @@ interface DynamicBatchStep {
 
 export default function MacroBatchApp() {
   // Navigation & UI state
-  const [tab, setTab] = useState<TabKey>("menu");
+  const [tab, setTab] = useState<TabKey>("home");
   const [isCatalogOpen, setIsCatalogOpen] = useState<boolean>(false);
   const [prepMode, setPrepMode] = useState<PrepSubMode>("batch");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -97,9 +101,11 @@ export default function MacroBatchApp() {
   const [swapSlotIndex, setSwapSlotIndex] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Fridge / Pantry Camera & Vision AI Scanner State (Catalog-First Zero Waste)
+  // Fridge / Pantry / Receipt Camera & Vision AI Scanner State (3-Step Zest Flow)
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [scanZone, setScanZone] = useState<"frigo" | "placard">("frigo");
+  const [scanStep, setScanStep] = useState<1 | 2 | 3>(1);
+  const [scanIntent, setScanIntent] = useState<"now" | "week">("week");
+  const [scanZone, setScanZone] = useState<"frigo" | "placard" | "ticket">("frigo");
   const [scanPhotoPreview, setScanPhotoPreview] = useState<string | null>(null);
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
   const [visionSummary, setVisionSummary] = useState<string | null>(null);
@@ -605,8 +611,12 @@ export default function MacroBatchApp() {
   // ================================================================
   // FRIDGE & PANTRY PHOTO SCANNER LOGIC (VISION AI + CATALOG PRIORITY + GROCERY DEDUCTION)
   // ================================================================
-  const openScannerModal = (zone: "frigo" | "placard") => {
+  const openScannerModal = (
+    zone: "frigo" | "placard" | "ticket" = "frigo",
+    initialStep: 1 | 2 | 3 = 1
+  ) => {
     setScanZone(zone);
+    setScanStep(initialStep);
     setIsAnalyzingPhoto(false);
     setTempDetectedIds(inStockIds);
     setTempCustomTerms(customStockTerms);
@@ -716,7 +726,12 @@ export default function MacroBatchApp() {
         body: JSON.stringify({
           imageBase64: dataUrl,
           mimeType: "image/jpeg",
-          zone: scanZone === "frigo" ? "fridge" : "pantry",
+          zone:
+            scanZone === "ticket"
+              ? "receipt"
+              : scanZone === "frigo"
+              ? "fridge"
+              : "pantry",
           apiKey: visionApiKey,
           colorStats,
           fileName: file.name,
@@ -747,6 +762,7 @@ export default function MacroBatchApp() {
             `${detectedIds.length + customItems.length} ingrédient(s) détecté(s)`
           );
         }
+        setScanStep(2);
       } else {
         const errData = await response.json().catch(() => ({}));
         setVisionSummary(errData?.error || `Erreur serveur (${response.status})`);
@@ -762,7 +778,7 @@ export default function MacroBatchApp() {
     }
   };
 
-  const simulateDetectionForZone = (zone: "frigo" | "placard") => {
+  const simulateDetectionForZone = (zone: "frigo" | "placard" | "ticket") => {
     setScanZone(zone);
     setIsAnalyzingPhoto(true);
     setTimeout(() => {
@@ -770,14 +786,19 @@ export default function MacroBatchApp() {
       const defaults =
         zone === "frigo"
           ? ["skyr", "poulet", "brocoli", "courgette", "oeufs"]
+          : zone === "ticket"
+          ? ["poulet", "riz", "tomate", "feta", "citron"]
           : ["riz", "quinoa", "lentilles", "lait_coco", "patate_douce"];
       setTempDetectedIds((prev) => Array.from(new Set([...prev, ...defaults])));
       setVisionMode("demo");
       setVisionSummary(
         zone === "frigo"
-          ? "Exemple frigo détecté : Poulet, Skyr, Œufs, Brocolis, Courgettes."
-          : "Exemple placard détecté : Riz, Quinoa, Lentilles corail, Lait de coco, Patates douces."
+          ? "Exemple frigo : Poulet, Skyr, Œufs, Brocolis, Courgettes."
+          : zone === "ticket"
+          ? "Exemple ticket : Poulet, Riz, Tomates, Feta, Citrons."
+          : "Exemple placard : Riz, Quinoa, Lentilles corail, Lait de coco, Patates douces."
       );
+      setScanStep(2);
     }, 450);
   };
 
@@ -1005,22 +1026,25 @@ export default function MacroBatchApp() {
         <header className="sticky top-0 z-30 bg-[#FAF8F5]/95 backdrop-blur-md border-b border-[#EDE8E0] px-4 py-3 flex items-center justify-between">
           <div>
             <h1 className="font-serif text-xl font-bold tracking-tight leading-none text-[#1C1917]">
-              MacroBatch
+              {tab === "home" ? "Salut !" : "MacroBatch"}
             </h1>
             <p className="text-xs font-medium text-[#78716C] mt-0.5">
-              {totalWeeklyPortions} portions • ~{avgCostPerMeal.toFixed(2).replace(".", ",")} € / repas
+              {tab === "home"
+                ? "Qu’est-ce qu’on cuisine ?"
+                : `${totalWeeklyPortions} portions • ~${avgCostPerMeal.toFixed(2).replace(".", ",")} € / repas`}
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => openScannerModal("frigo")}
-              className="tap-scale h-9 px-3.5 rounded-full bg-[#FF5A36] text-white flex items-center gap-1.5 text-xs font-bold cursor-pointer shadow-xs"
-            >
-              <Camera className="w-3.5 h-3.5" />
-              <span>{totalStockCount > 0 ? `Frigo (${totalStockCount})` : "Scanner"}</span>
-            </button>
+            {totalStockCount > 0 && (
+              <button
+                type="button"
+                onClick={() => openScannerModal("frigo", 2)}
+                className="tap-scale h-9 px-3 rounded-full bg-[#FEF3C7] border border-[#F5B731]/40 text-[#92400E] flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+              >
+                <span>{totalStockCount} en stock</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -1032,6 +1056,168 @@ export default function MacroBatchApp() {
             </button>
           </div>
         </header>
+
+        {/* ================================================================
+            TAB 0: ACCUEIL (INSPIRÉ ZEST — LUMINEUX, CHALEUREUX, ÉVIDENT)
+            ================================================================ */}
+        {tab === "home" && (
+          <main className="px-4 pt-4 space-y-5">
+            {/* Warm Lemon-Yellow Hero Card */}
+            <section className="bg-[#FEF3C7] border border-[#F5B731]/35 rounded-3xl p-5 space-y-4 shadow-xs">
+              <div className="space-y-1">
+                <span className="inline-block text-[11px] font-extrabold uppercase tracking-wider text-[#92400E] bg-[#FDE68A]/70 px-2.5 py-0.5 rounded-full">
+                  Zéro gaspillage
+                </span>
+                <h2 className="font-serif text-2xl font-bold text-[#1C1917] leading-tight pt-1">
+                  Cuisiner maintenant
+                </h2>
+                <p className="text-xs text-[#78350F]/80 leading-relaxed">
+                  Scanne ton frigo, ton placard ou un ticket de caisse pour adapter ton menu et déduire tes courses.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => openScannerModal("frigo", 1)}
+                  className="tap-scale py-3 px-4 rounded-2xl bg-[#141414] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                >
+                  <Camera className="w-4 h-4 text-[#FCD34D]" />
+                  <span>Scanner</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openScannerModal("frigo", totalStockCount > 0 ? 2 : 1)}
+                  className="tap-scale py-3 px-4 rounded-2xl bg-white text-[#1C1917] border border-[#E7E2DA] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <span>
+                    {totalStockCount > 0 ? `Mon stock (${totalStockCount})` : "Choisir à la main"}
+                  </span>
+                </button>
+              </div>
+            </section>
+
+            {/* Aujourd'hui (Plat du jour) */}
+            {activeDishes[0] && (
+              <section className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-serif text-lg font-bold text-[#1C1917]">
+                    Aujourd’hui
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setTab("menu")}
+                    className="text-xs font-bold text-[#92400E] hover:underline cursor-pointer"
+                  >
+                    Voir la semaine →
+                  </button>
+                </div>
+
+                <article
+                  onClick={() => setSelectedRecipe(activeDishes[0])}
+                  className="bg-white rounded-3xl overflow-hidden border border-[#EDE8E0] shadow-xs flex items-center gap-3.5 p-3 cursor-pointer tap-scale"
+                >
+                  <img
+                    src={activeDishes[0].image}
+                    alt={activeDishes[0].shortName}
+                    className="w-20 h-20 rounded-2xl object-cover shrink-0 bg-stone-100"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#D97706]">
+                      Lundi • {effectiveSlotPeople[0] ?? peopleCount} pers.
+                    </span>
+                    <h4 className="font-serif text-base font-bold text-[#1C1917] truncate mt-0.5">
+                      {activeDishes[0].shortName}
+                    </h4>
+                    <p className="text-xs text-[#78716C] mt-0.5 font-mono-tabular">
+                      {getDishProtein(activeDishes[0])}g prot • {activeDishes[0].cookMethodLabel}
+                    </p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-[#78716C] shrink-0 mr-1" />
+                </article>
+              </section>
+            )}
+
+            {/* Garde-manger / À consommer vite */}
+            <section className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h3 className="font-serif text-lg font-bold text-[#1C1917]">
+                  Ton garde-manger
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => openScannerModal("frigo", 1)}
+                  className="text-xs font-bold text-[#141414] cursor-pointer"
+                >
+                  + Mettre à jour
+                </button>
+              </div>
+
+              {totalStockCount > 0 ? (
+                <div className="bg-white rounded-3xl border border-[#EDE8E0] p-4 space-y-3 shadow-xs">
+                  <div className="flex flex-wrap gap-1.5">
+                    {allStockPresets
+                      .filter((p) => inStockIds.includes(p.id))
+                      .map((p) => (
+                        <span
+                          key={p.id}
+                          className="px-3 py-1.5 rounded-full bg-[#FEF3C7]/70 text-[#78350F] text-xs font-bold border border-[#F5B731]/30"
+                        >
+                          {p.label}
+                        </span>
+                      ))}
+                    {customStockTerms.map((term) => (
+                      <span
+                        key={term}
+                        className="px-3 py-1.5 rounded-full bg-[#ECFDF5] text-[#065F46] text-xs font-bold border border-[#059669]/25"
+                      >
+                        {term}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-[#F3EFE8]">
+                    <span className="text-xs text-[#78716C]">
+                      Déduits automatiquement de tes courses
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openScannerModal("frigo", 2)}
+                      className="text-xs font-bold text-[#141414] cursor-pointer"
+                    >
+                      Modifier
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white rounded-3xl border border-[#EDE8E0] p-4 space-y-3 shadow-xs">
+                  <p className="text-xs text-[#78716C]">
+                    Ajoute ce que tu as sous la main en 1 photo :
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { zone: "frigo" as const, label: "Frigo", icon: Camera },
+                      { zone: "placard" as const, label: "Placard", icon: Utensils },
+                      { zone: "ticket" as const, label: "Ticket", icon: Receipt },
+                    ].map((z) => {
+                      const ZIcon = z.icon;
+                      return (
+                        <button
+                          key={z.zone}
+                          type="button"
+                          onClick={() => openScannerModal(z.zone, 1)}
+                          className="tap-scale py-3 px-2 rounded-2xl bg-[#FAF8F5] hover:bg-[#FEF3C7]/50 border border-[#EDE8E0] flex flex-col items-center gap-1.5 cursor-pointer"
+                        >
+                          <ZIcon className="w-4 h-4 text-[#D97706]" />
+                          <span className="text-xs font-bold text-[#1C1917]">{z.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </section>
+          </main>
+        )}
 
         {/* ================================================================
             TAB 1: SEMAINE (STYLE JOW / FRICHTI — LUMINEUX & GOURMAND)
@@ -1543,11 +1729,43 @@ export default function MacroBatchApp() {
         )}
 
         {/* ================================================================
-            BOTTOM TAB BAR (3 TABS ONLY: SEMAINE -> COURSES -> CUISINER)
+            BOTTOM TAB BAR (ACCUEIL • SEMAINE • [SCAN] • COURSES • CUISINER)
             ================================================================ */}
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[440px] z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-4 pt-2 pb-safe grid grid-cols-3">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[440px] z-40 bg-white/95 backdrop-blur-md border-t border-[#EDE8E0] px-2 pt-2 pb-safe grid grid-cols-5 items-end">
           {[
+            { id: "home", label: "Accueil", icon: Home, badge: 0 },
             { id: "menu", label: "Semaine", icon: Calendar, badge: 0 },
+          ].map((item) => {
+            const Icon = item.icon;
+            const isActive = tab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id as TabKey)}
+                className={`tap-scale relative flex flex-col items-center gap-1 py-1 rounded-xl cursor-pointer transition-colors ${
+                  isActive ? "text-[#141414]" : "text-stone-400 hover:text-stone-700"
+                }`}
+              >
+                <Icon className={`w-5 h-5 ${isActive ? "stroke-[2.4]" : ""}`} />
+                <span className="text-[11px] font-bold">{item.label}</span>
+              </button>
+            );
+          })}
+
+          {/* Central Round Scan CTA */}
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => openScannerModal("frigo", 1)}
+              aria-label="Scanner frigo, placard ou ticket"
+              className="tap-scale -mt-4 w-12 h-12 rounded-full bg-[#141414] text-[#FCD34D] flex items-center justify-center shadow-lg border-4 border-[#FAF8F5] cursor-pointer"
+            >
+              <Camera className="w-5 h-5" />
+            </button>
+          </div>
+
+          {[
             {
               id: "cart",
               label: "Courses",
@@ -1573,17 +1791,17 @@ export default function MacroBatchApp() {
                 type="button"
                 onClick={() => setTab(item.id as TabKey)}
                 className={`tap-scale relative flex flex-col items-center gap-1 py-1 rounded-xl cursor-pointer transition-colors ${
-                  isActive ? "text-[#FF5A36]" : "text-slate-400 hover:text-slate-700"
+                  isActive ? "text-[#141414]" : "text-stone-400 hover:text-stone-700"
                 }`}
               >
                 <div className="relative">
-                  <Icon className="w-5 h-5" />
+                  <Icon className={`w-5 h-5 ${isActive ? "stroke-[2.4]" : ""}`} />
                   {item.badge > 0 && (
                     <span
                       className={`absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-extrabold flex items-center justify-center leading-none ${
                         isActive
-                          ? "bg-[#FF5A36] text-white"
-                          : "bg-slate-200 text-slate-700"
+                          ? "bg-[#F5B731] text-[#141414]"
+                          : "bg-stone-200 text-stone-700"
                       }`}
                     >
                       {item.badge}
@@ -1749,38 +1967,56 @@ export default function MacroBatchApp() {
       )}
 
       {/* ================================================================
-          FRIDGE / PANTRY PHOTO SCANNER MODAL SHEET (ZERO-WASTE CATALOG & CART)
+          FRIDGE / PANTRY / RECEIPT 3-STEP SCANNER MODAL SHEET (ZEST STYLE)
           ================================================================ */}
       {isScannerOpen && (
         <div
           onClick={() => setIsScannerOpen(false)}
-          className="fixed inset-0 z-50 bg-[#0F172A]/60 backdrop-blur-xs flex items-end sm:items-center justify-center"
+          className="fixed inset-0 z-50 bg-[#141414]/60 backdrop-blur-xs flex items-end sm:items-center justify-center"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white w-full max-w-[440px] rounded-t-3xl sm:rounded-3xl p-5 pb-safe space-y-4 shadow-2xl max-h-[88vh] overflow-y-auto"
+            className="bg-[#FAF8F5] w-full max-w-[440px] rounded-t-3xl sm:rounded-3xl p-5 pb-safe space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#059669] block">
-                  Analyse Vision IA • Zéro gaspillage
-                </span>
-                <h2 className="text-base font-extrabold text-[#0F172A]">
-                  Scanner mon Frigo & Placard
-                </h2>
+            {/* Modal Header with Step Indicator */}
+            <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-3">
+              <div className="flex items-center gap-2.5">
+                {scanStep > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setScanStep(scanStep === 3 ? 2 : 1)}
+                    aria-label="Étape précédente"
+                    className="w-8 h-8 rounded-full bg-white border border-[#EDE8E0] flex items-center justify-center text-[#141414] cursor-pointer shrink-0"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                )}
+                <div>
+                  <span className="inline-block text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] mb-1">
+                    Étape {scanStep} / 3
+                  </span>
+                  <h2 className="font-serif text-lg font-bold text-[#141414] leading-tight">
+                    {scanStep === 1
+                      ? "Scanner mon stock"
+                      : scanStep === 2
+                      ? "Vérifie ce qu’on a trouvé"
+                      : "On cuisine quoi ?"}
+                  </h2>
+                </div>
               </div>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => setShowApiKeyInput((prev) => !prev)}
-                  className="px-2.5 py-1 rounded-full bg-slate-100 text-[11px] font-bold text-slate-600 cursor-pointer"
+                  className="px-2.5 py-1 rounded-full bg-white border border-[#EDE8E0] text-[11px] font-bold text-stone-600 cursor-pointer"
                 >
                   {visionApiKey ? "Clé IA active" : "Clé API"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsScannerOpen(false)}
-                  className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 cursor-pointer"
+                  aria-label="Fermer"
+                  className="w-8 h-8 rounded-full bg-white border border-[#EDE8E0] flex items-center justify-center text-stone-600 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1788,8 +2024,8 @@ export default function MacroBatchApp() {
             </div>
 
             {showApiKeyInput && (
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-700 block">
+              <div className="bg-white border border-[#EDE8E0] rounded-2xl p-3 space-y-1.5">
+                <label className="text-[11px] font-bold text-stone-700 block">
                   Clé API Vision (Gemini AI Studio ou OpenAI sk-...) — Optionnel
                 </label>
                 <input
@@ -1797,35 +2033,13 @@ export default function MacroBatchApp() {
                   value={visionApiKey}
                   onChange={(e) => setVisionApiKey(e.target.value)}
                   placeholder="Collez votre clé Gemini ou OpenAI pour l'analyse cloud..."
-                  className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs text-[#0F172A] focus:outline-none focus:border-slate-400"
+                  className="w-full px-3 py-2 rounded-xl bg-[#FAF8F5] border border-[#EDE8E0] text-xs text-[#141414] focus:outline-none focus:border-stone-400"
                 />
-                <p className="text-[10px] text-slate-500">
-                  Sans clé, l&apos;application utilise automatiquement l&apos;analyse visuelle locale par profil colorimétrique.
+                <p className="text-[10px] text-stone-500">
+                  Sans clé, l&apos;application utilise l&apos;API serveur ou l&apos;analyse locale.
                 </p>
               </div>
             )}
-
-            {/* Zone Switcher */}
-            <div className="bg-slate-100 p-1 rounded-xl flex">
-              <button
-                type="button"
-                onClick={() => setScanZone("frigo")}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
-                  scanZone === "frigo" ? "bg-white text-[#0F172A] shadow-2xs" : "text-slate-500"
-                }`}
-              >
-                Frigo (Frais & Légumes)
-              </button>
-              <button
-                type="button"
-                onClick={() => setScanZone("placard")}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
-                  scanZone === "placard" ? "bg-white text-[#0F172A] shadow-2xs" : "text-slate-500"
-                }`}
-              >
-                Placard (Sec & Épicerie)
-              </button>
-            </div>
 
             {/* Hidden Native Camera & Gallery Inputs */}
             <input
@@ -1844,245 +2058,446 @@ export default function MacroBatchApp() {
               className="hidden"
             />
 
-            {/* Upload / Camera Area */}
-            {scanPhotoPreview ? (
-              <div className="relative aspect-video rounded-2xl overflow-hidden bg-slate-900">
-                <img
-                  src={scanPhotoPreview}
-                  alt="Aperçu"
-                  className="w-full h-full object-cover"
-                />
-                <div
-                  className={`absolute top-2.5 left-2.5 text-white text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                    visionMode === "gemini-vision" || visionMode === "openai-vision"
-                      ? "bg-[#059669]/90"
-                      : "bg-amber-600/90"
-                  }`}
-                >
-                  {visionMode === "gemini-vision"
-                    ? "Gemini Vision"
-                    : visionMode === "openai-vision"
-                    ? "OpenAI Vision"
-                    : "Vision Locale"}
-                </div>
-                <div className="absolute bottom-3 right-3 flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => galleryInputRef.current?.click()}
-                    className="bg-white/95 text-[#0F172A] text-xs font-bold px-3 py-1.5 rounded-full shadow-sm cursor-pointer"
-                  >
-                    Galerie
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="bg-white/95 text-[#0F172A] text-xs font-bold px-3 py-1.5 rounded-full shadow-sm cursor-pointer"
-                  >
-                    Reprendre
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="border border-slate-200 rounded-2xl p-4 text-center space-y-3 bg-slate-50/70">
-                <p className="text-xs font-semibold text-slate-600">
-                  Prenez une photo de votre {scanZone} ou dictez à voix haute vos restes (« poulet, courgettes, skyr, riz... ») :
-                </p>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="tap-scale px-3.5 py-2.5 bg-[#0F172A] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Camera className="w-3.5 h-3.5 text-[#FF5A36]" />
-                    <span>Caméra IA</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => galleryInputRef.current?.click()}
-                    className="tap-scale px-3.5 py-2.5 bg-white border border-slate-300 text-[#0F172A] rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <ImageIcon className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Galerie</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={toggleVoiceDictation}
-                    className={`tap-scale px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer border ${
-                      isListeningVoice
-                        ? "bg-[#FF5A36] text-white border-[#FF5A36]"
-                        : "bg-white text-[#0F172A] border-slate-300"
-                    }`}
-                  >
-                    <Mic className="w-3.5 h-3.5" />
-                    <span>{isListeningVoice ? "Arrêter dictée" : "Micro"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => simulateDetectionForZone(scanZone)}
-                    className="tap-scale px-3 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <span>Exemple</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {isListeningVoice && (
-              <div className="bg-[#FFF1EE] border border-[#FF5A36]/30 rounded-2xl px-3.5 py-2.5 text-center">
-                <p className="text-xs font-bold text-[#FF5A36]">
-                  Écoute vocale active — énoncez vos ingrédients...
-                </p>
-                {voiceTranscript && (
-                  <p className="text-[11px] font-medium text-slate-700 mt-1 italic">
-                    « {voiceTranscript} »
-                  </p>
-                )}
-              </div>
-            )}
-
-            {isAnalyzingPhoto && (
-              <div className="bg-slate-50 rounded-2xl p-3.5 text-center border border-slate-200/80">
-                <p className="text-xs font-bold text-[#0F172A]">
-                  Analyse Vision IA de la photo du {scanZone} en cours...
-                </p>
-              </div>
-            )}
-
-            {visionSummary && !isAnalyzingPhoto && !isListeningVoice && (
-              <div
-                className={`rounded-2xl px-3.5 py-2.5 border ${
-                  visionMode === "gemini-vision" || visionMode === "openai-vision"
-                    ? "bg-[#ECFDF5] border-[#059669]/25 text-[#065F46]"
-                    : "bg-amber-50 border-amber-200 text-amber-900"
-                }`}
-              >
-                <p className="text-xs font-semibold">{visionSummary}</p>
-              </div>
-            )}
-
-            {/* Quick Custom Ingredient Input (for any item spotted by AI or added manually) */}
-            <div className="space-y-2">
-              <div className="flex gap-1.5">
-                <input
-                  type="text"
-                  value={customInput}
-                  onChange={(e) => setCustomInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addCustomIngredientTerm();
-                    }
-                  }}
-                  placeholder="Ajouter un autre ingrédient (ex: saumon, poivron...)"
-                  className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#0F172A] placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
-                />
-                <button
-                  type="button"
-                  onClick={addCustomIngredientTerm}
-                  className="px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold cursor-pointer shrink-0"
-                >
-                  Ajouter
-                </button>
-              </div>
-
-              {tempCustomTerms.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {tempCustomTerms.map((term) => (
-                    <span
-                      key={term}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#ECFDF5] text-[#065F46] border border-[#059669]/30 text-xs font-bold"
+            {/* ============================================================
+                STEP 1: ZONE & PHOTO / VOICE CAPTURE
+                ============================================================ */}
+            {scanStep === 1 && (
+              <div className="space-y-4">
+                {/* Zone Switcher: Frigo | Placard | Ticket de caisse */}
+                <div className="bg-[#EDE8E0]/70 p-1 rounded-2xl grid grid-cols-3 gap-1">
+                  {[
+                    { id: "frigo" as const, label: "Frigo" },
+                    { id: "placard" as const, label: "Placard" },
+                    { id: "ticket" as const, label: "Ticket" },
+                  ].map((z) => (
+                    <button
+                      key={z.id}
+                      type="button"
+                      onClick={() => setScanZone(z.id)}
+                      className={`py-2 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 ${
+                        scanZone === z.id
+                          ? "bg-white text-[#141414] shadow-2xs"
+                          : "text-stone-500 hover:text-[#141414]"
+                      }`}
                     >
-                      <span>{term}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeCustomIngredientTerm(term)}
-                        className="text-[#065F46] hover:text-[#0F172A] cursor-pointer"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
+                      {z.id === "ticket" && <Receipt className="w-3.5 h-3.5" />}
+                      <span>{z.label}</span>
+                    </button>
                   ))}
                 </div>
-              )}
-            </div>
 
-            {/* Interactive 2-column checklist of detected / selectable ingredients */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">
-                  Ingrédients détectés ({scanZone}) :
-                </span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-slate-400">
-                    {totalTempStockCount} au total
-                  </span>
-                  {totalTempStockCount > 0 && (
+                {/* Upload / Camera Area */}
+                {scanPhotoPreview ? (
+                  <div className="relative aspect-video rounded-3xl overflow-hidden bg-stone-900 border border-[#EDE8E0]">
+                    <img
+                      src={scanPhotoPreview}
+                      alt="Aperçu"
+                      className="w-full h-full object-cover"
+                    />
+                    <div
+                      className={`absolute top-2.5 left-2.5 text-white text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                        visionMode === "gemini-vision" || visionMode === "openai-vision"
+                          ? "bg-[#059669]/90"
+                          : "bg-amber-600/90"
+                      }`}
+                    >
+                      {visionMode === "gemini-vision"
+                        ? "Gemini Vision"
+                        : visionMode === "openai-vision"
+                        ? "OpenAI Vision"
+                        : "Vision Locale"}
+                    </div>
+                    <div className="absolute bottom-3 right-3 flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => galleryInputRef.current?.click()}
+                        className="bg-white/95 text-[#141414] text-xs font-bold px-3 py-1.5 rounded-full shadow-sm cursor-pointer"
+                      >
+                        Galerie
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="bg-white/95 text-[#141414] text-xs font-bold px-3 py-1.5 rounded-full shadow-sm cursor-pointer"
+                      >
+                        Reprendre
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-[#EDE8E0] rounded-3xl p-5 text-center space-y-4">
+                    <div className="w-12 h-12 rounded-2xl bg-[#FEF3C7] text-[#92400E] flex items-center justify-center mx-auto">
+                      {scanZone === "ticket" ? (
+                        <Receipt className="w-6 h-6" />
+                      ) : (
+                        <Camera className="w-6 h-6" />
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-bold text-[#141414]">
+                        {scanZone === "frigo"
+                          ? "Prenez votre frigo en photo"
+                          : scanZone === "ticket"
+                          ? "Scannez votre ticket de caisse"
+                          : "Prenez votre placard en photo"}
+                      </p>
+                      <p className="text-xs text-stone-500">
+                        {scanZone === "ticket"
+                          ? "L’IA extrait automatiquement tous les produits alimentaires achetés."
+                          : "L’IA repère vos ingrédients pour éviter le gaspillage et réduire vos courses."}
+                      </p>
+                    </div>
+
                     <button
                       type="button"
-                      onClick={() => {
-                        setTempDetectedIds([]);
-                        setTempCustomTerms([]);
-                        setVisionSummary(null);
-                      }}
-                      className="text-[11px] font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="tap-scale w-full py-3.5 bg-[#141414] text-white rounded-2xl text-sm font-bold flex items-center justify-center gap-2 cursor-pointer shadow-sm"
                     >
-                      Tout décocher
+                      <Camera className="w-4 h-4 text-[#F5B731]" />
+                      <span>Prendre une photo</span>
                     </button>
-                  )}
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-1.5">
-                {(scanZone === "frigo" ? FRIDGE_SCAN_PRESETS : PANTRY_SCAN_PRESETS).map(
-                  (preset) => {
-                    const isSel = tempDetectedIds.includes(preset.id);
-                    return (
+                    <div className="grid grid-cols-3 gap-2">
                       <button
-                        key={preset.id}
                         type="button"
-                        onClick={() => toggleTempDetected(preset.id)}
-                        className={`px-3 py-2 rounded-xl border flex items-center justify-between text-left cursor-pointer transition-colors ${
-                          isSel
-                            ? "bg-[#ECFDF5] border-[#059669]/40 text-[#0F172A]"
-                            : "bg-white border-slate-200 text-slate-700"
+                        onClick={() => galleryInputRef.current?.click()}
+                        className="tap-scale py-2.5 bg-[#FAF8F5] border border-[#EDE8E0] text-[#141414] rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5 text-stone-600" />
+                        <span>Galerie</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={toggleVoiceDictation}
+                        className={`tap-scale py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${
+                          isListeningVoice
+                            ? "bg-[#F5B731] text-[#141414] border-[#F5B731]"
+                            : "bg-[#FAF8F5] text-[#141414] border-[#EDE8E0]"
                         }`}
                       >
-                        <span className="text-xs font-bold truncate pr-1.5">{preset.label}</span>
-                        <div
-                          className={`w-4 h-4 rounded-sm border flex items-center justify-center shrink-0 ${
-                            isSel
-                              ? "bg-[#059669] border-[#059669] text-white"
-                              : "border-slate-300 bg-white"
-                          }`}
-                        >
-                          {isSel && <Check className="w-3 h-3" />}
-                        </div>
+                        <Mic className="w-3.5 h-3.5" />
+                        <span>{isListeningVoice ? "Stop" : "Micro"}</span>
                       </button>
-                    );
-                  }
+                      <button
+                        type="button"
+                        onClick={() => simulateDetectionForZone(scanZone)}
+                        className="tap-scale py-2.5 bg-[#FAF8F5] border border-[#EDE8E0] text-stone-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <span>Exemple</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {isListeningVoice && (
+                  <div className="bg-[#FEF3C7] border border-[#F5B731]/50 rounded-2xl px-3.5 py-2.5 text-center">
+                    <p className="text-xs font-bold text-[#92400E]">
+                      Écoute vocale active — énoncez vos ingrédients...
+                    </p>
+                    {voiceTranscript && (
+                      <p className="text-[11px] font-medium text-stone-700 mt-1 italic">
+                        « {voiceTranscript} »
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {isAnalyzingPhoto && (
+                  <div className="bg-white rounded-2xl p-4 text-center border border-[#EDE8E0]">
+                    <p className="text-xs font-bold text-[#141414]">
+                      Analyse Vision IA en cours...
+                    </p>
+                  </div>
+                )}
+
+                {totalTempStockCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setScanStep(2)}
+                    className="tap-scale w-full py-3.5 bg-[#141414] text-white rounded-2xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>Voir mon stock ({totalTempStockCount})</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setScanStep(2)}
+                    className="w-full py-2.5 text-xs font-bold text-stone-500 hover:text-[#141414] flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <span>Saisir ou cocher manuellement</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 )}
               </div>
-            </div>
+            )}
 
-            {/* Dual CTA: Prioritize Catalog OR Auto-Compose the 5 Week Meals */}
-            <div className="space-y-2 pt-1">
-              <button
-                type="button"
-                onClick={() => applyScannedStock(false)}
-                className="tap-scale w-full py-3 bg-[#0F172A] text-white rounded-2xl text-xs font-bold cursor-pointer"
-              >
-                Trier le catalogue & déduire des courses ({totalTempStockCount})
-              </button>
-              {totalTempStockCount > 0 && (
+            {/* ============================================================
+                STEP 2: VERIFY & ADJUST DETECTED INGREDIENTS
+                ============================================================ */}
+            {scanStep === 2 && (
+              <div className="space-y-4">
+                {visionSummary && !isAnalyzingPhoto && (
+                  <div
+                    className={`rounded-2xl px-3.5 py-2.5 border ${
+                      visionMode === "gemini-vision" || visionMode === "openai-vision"
+                        ? "bg-[#ECFDF5] border-[#059669]/25 text-[#065F46]"
+                        : "bg-[#FEF3C7] border-[#F5B731]/40 text-[#92400E]"
+                    }`}
+                  >
+                    <p className="text-xs font-semibold">{visionSummary}</p>
+                  </div>
+                )}
+
+                {/* Quick Custom Ingredient Input */}
+                <div className="space-y-2">
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={customInput}
+                      onChange={(e) => setCustomInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addCustomIngredientTerm();
+                        }
+                      }}
+                      placeholder="Ajouter un ingrédient (ex: saumon, poivron...)"
+                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-[#EDE8E0] text-xs text-[#141414] placeholder:text-stone-400 focus:outline-none focus:border-stone-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={addCustomIngredientTerm}
+                      className="px-3.5 py-2.5 rounded-xl bg-[#141414] text-white text-xs font-bold cursor-pointer shrink-0"
+                    >
+                      Ajouter
+                    </button>
+                  </div>
+
+                  {tempCustomTerms.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {tempCustomTerms.map((term) => (
+                        <span
+                          key={term}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#F5B731]/40 text-xs font-bold"
+                        >
+                          <span>{term}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeCustomIngredientTerm(term)}
+                            className="text-[#92400E] hover:text-[#141414] cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2-Column Preset Checklist */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-stone-700">
+                      Ingrédients sélectionnés ({totalTempStockCount})
+                    </span>
+                    {totalTempStockCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTempDetectedIds([]);
+                          setTempCustomTerms([]);
+                          setVisionSummary(null);
+                        }}
+                        className="text-[11px] font-bold text-stone-500 hover:text-[#141414] cursor-pointer"
+                      >
+                        Tout décocher
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5 max-h-[38vh] overflow-y-auto pr-0.5">
+                    {(scanZone === "frigo"
+                      ? FRIDGE_SCAN_PRESETS
+                      : scanZone === "placard"
+                      ? PANTRY_SCAN_PRESETS
+                      : allStockPresets
+                    ).map((preset) => {
+                      const isSel = tempDetectedIds.includes(preset.id);
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => toggleTempDetected(preset.id)}
+                          className={`px-3 py-2.5 rounded-xl border flex items-center justify-between text-left cursor-pointer transition-colors ${
+                            isSel
+                              ? "bg-[#FEF3C7]/70 border-[#F5B731] text-[#141414]"
+                              : "bg-white border-[#EDE8E0] text-stone-700"
+                          }`}
+                        >
+                          <span className="text-xs font-bold truncate pr-1.5">{preset.label}</span>
+                          <div
+                            className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                              isSel
+                                ? "bg-[#141414] border-[#141414] text-white"
+                                : "border-stone-300 bg-white"
+                            }`}
+                          >
+                            {isSel && <Check className="w-2.5 h-2.5" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => applyScannedStock(true)}
-                  className="tap-scale w-full py-2.5 bg-[#ECFDF5] text-[#059669] border border-[#059669]/30 rounded-2xl text-xs font-bold cursor-pointer"
+                  onClick={() => setScanStep(3)}
+                  className="tap-scale w-full py-3.5 bg-[#141414] text-white rounded-2xl text-sm font-bold flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  Composer automatiquement mes 5 plats avec ce stock
+                  <span>C’est bon, continuer</span>
+                  <ArrowRight className="w-4 h-4" />
                 </button>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* ============================================================
+                STEP 3: PEOPLE COUNT & COOKING INTENT
+                ============================================================ */}
+            {scanStep === 3 && (
+              <div className="space-y-4">
+                {/* People Count Stepper */}
+                <div className="bg-white border border-[#EDE8E0] rounded-2xl p-4 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-[#141414] block">
+                      Pour combien de personnes ?
+                    </span>
+                    <span className="text-[11px] text-stone-500">
+                      Adapte automatiquement les quantités
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPeopleCount((p) => Math.max(1, p - 1))}
+                      aria-label="Moins de personnes"
+                      className="w-8 h-8 rounded-full bg-[#FAF8F5] border border-[#EDE8E0] flex items-center justify-center text-[#141414] cursor-pointer"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="w-6 text-center text-sm font-extrabold text-[#141414] font-mono-tabular">
+                      {peopleCount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPeopleCount((p) => Math.min(12, p + 1))}
+                      aria-label="Plus de personnes"
+                      className="w-8 h-8 rounded-full bg-[#FAF8F5] border border-[#EDE8E0] flex items-center justify-center text-[#141414] cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Intent Selector */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-stone-700 block">
+                    Que souhaitez-vous préparer ?
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setScanIntent("now")}
+                    className={`w-full p-4 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                      scanIntent === "now"
+                        ? "bg-[#FEF3C7]/70 border-[#F5B731] shadow-2xs"
+                        : "bg-white border-[#EDE8E0]"
+                    }`}
+                  >
+                    <div className="pr-3">
+                      <span className="text-sm font-extrabold text-[#141414] block">
+                        Maintenant (1 recette)
+                      </span>
+                      <span className="text-xs text-stone-600">
+                        Trouve le meilleur plat avec ce que vous avez déjà sous la main.
+                      </span>
+                    </div>
+                    <div
+                      className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                        scanIntent === "now"
+                          ? "bg-[#141414] border-[#141414] text-white"
+                          : "border-stone-300 bg-white"
+                      }`}
+                    >
+                      {scanIntent === "now" && <Check className="w-3 h-3" />}
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setScanIntent("week")}
+                    className={`w-full p-4 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                      scanIntent === "week"
+                        ? "bg-[#FEF3C7]/70 border-[#F5B731] shadow-2xs"
+                        : "bg-white border-[#EDE8E0]"
+                    }`}
+                  >
+                    <div className="pr-3">
+                      <span className="text-sm font-extrabold text-[#141414] block">
+                        Planifier ma semaine (5 plats)
+                      </span>
+                      <span className="text-xs text-stone-600">
+                        Compose vos 5 dîners et déduit automatiquement vos courses.
+                      </span>
+                    </div>
+                    <div
+                      className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                        scanIntent === "week"
+                          ? "bg-[#141414] border-[#141414] text-white"
+                          : "border-stone-300 bg-white"
+                      }`}
+                    >
+                      {scanIntent === "week" && <Check className="w-3 h-3" />}
+                    </div>
+                  </button>
+                </div>
+
+                {/* Final Action CTA */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (scanIntent === "week") {
+                      applyScannedStock(true);
+                      setTab("menu");
+                      return;
+                    }
+                    setInStockIds(tempDetectedIds);
+                    setCustomStockTerms(tempCustomTerms);
+                    setIsScannerOpen(false);
+                    const compatible = RECIPE_DATABASE.filter((r) => {
+                      if (diet === "vege" && r.diet !== "vege" && r.diet !== "both") return false;
+                      if (diet === "pesco" && r.diet === "omni") return false;
+                      return true;
+                    }).sort(
+                      (a, b) =>
+                        getRecipeStockMatches(b, tempDetectedIds, tempCustomTerms).length -
+                        getRecipeStockMatches(a, tempDetectedIds, tempCustomTerms).length
+                    );
+                    if (compatible.length > 0) {
+                      setSelectedRecipe(compatible[0]);
+                      showToast(`Recette idéale : ${compatible[0].shortName}`);
+                    } else {
+                      setIsCatalogOpen(true);
+                    }
+                  }}
+                  className="tap-scale w-full py-3.5 bg-[#141414] text-white rounded-2xl text-sm font-bold flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Trouver mes recettes</span>
+                  <ArrowRight className="w-4 h-4 text-[#F5B731]" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
