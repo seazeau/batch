@@ -167,10 +167,6 @@ export default function MacroBatchApp() {
     () => slotPeopleCounts.map((v) => v ?? peopleCount),
     [slotPeopleCounts, peopleCount]
   );
-  const totalWeeklyPortions = useMemo(
-    () => effectiveSlotPeople.reduce((acc, p) => acc + p * 2, 0),
-    [effectiveSlotPeople]
-  );
   const hasCustomDayPeople = slotPeopleCounts.some((v) => v !== null);
 
   const updateDayPeopleCount = (dayIdx: number, delta: number) => {
@@ -392,6 +388,21 @@ export default function MacroBatchApp() {
       .filter((r): r is Recipe => Boolean(r));
   }, [currentWeekSlots]);
 
+  const plannedDishes = useMemo(() => {
+    return activeDishes
+      .map((dish, dayIdx) => ({ dish, dayIdx }))
+      .filter(({ dayIdx }) => !skippedDays[dayIdx]);
+  }, [activeDishes, skippedDays]);
+
+  const totalWeeklyPortions = useMemo(
+    () =>
+      effectiveSlotPeople.reduce(
+        (acc, p, idx) => (skippedDays[idx] ? acc : acc + p * 2),
+        0
+      ),
+    [effectiveSlotPeople, skippedDays]
+  );
+
   const avgProtPerMeal = useMemo(() => {
     if (activeDishes.length === 0) return 0;
     const sum = activeDishes.reduce((acc, d) => acc + getDishProtein(d), 0);
@@ -577,22 +588,25 @@ export default function MacroBatchApp() {
   };
 
   // ================================================================
-  // DYNAMIC BATCH PREPARATION ENGINE (ADAPTED TO THE 5 SELECTED DISHES)
+  // DYNAMIC BATCH PREPARATION ENGINE (ADAPTED TO PLANNED DISHES)
   // ================================================================
   const dynamicBatchTimeline = useMemo<DynamicBatchStep[]>(() => {
+    if (plannedDishes.length === 0) return [];
     const steps: DynamicBatchStep[] = [];
 
-    const ovenDishes = activeDishes.filter((d) => d.cookMethod === "four");
-    const simmerDishes = activeDishes.filter((d) => d.cookMethod === "mijote");
-    const panDishes = activeDishes.filter((d) => d.cookMethod === "poele");
-    const minuteDishes = activeDishes.filter((d) => d.cookMethod === "minute");
+    const ovenDishes = plannedDishes.filter(({ dish }) => dish.cookMethod === "four");
+    const simmerDishes = plannedDishes.filter(({ dish }) => dish.cookMethod === "mijote");
+    const panDishes = plannedDishes.filter(({ dish }) => dish.cookMethod === "poele");
+    const minuteDishes = plannedDishes.filter(({ dish }) => dish.cookMethod === "minute");
 
-    const getGroupIngredients = (dishes: Recipe[], aisles: SupermarketAisle[]) => {
+    const getGroupIngredients = (
+      items: { dish: Recipe; dayIdx: number }[],
+      aisles: SupermarketAisle[]
+    ) => {
       const map = new Map<string, { name: string; qty: number; unit: string }>();
-      activeDishes.forEach((d, dayIdx) => {
-        if (!dishes.includes(d)) return;
+      items.forEach(({ dish, dayIdx }) => {
         const dishPortions = (effectiveSlotPeople[dayIdx] ?? peopleCount) * 2;
-        d.ingredients
+        dish.ingredients
           .filter((i) => aisles.includes(i.aisle) && !i.isPantry)
           .forEach((i) => {
             const prev = map.get(i.name);
@@ -603,38 +617,38 @@ export default function MacroBatchApp() {
       return Array.from(map.values()).map((x) => `${x.name} (${formatQty(x.qty, x.unit)})`);
     };
 
-    const allVegPills = getGroupIngredients(activeDishes, ["legumes"]);
-    const allProtPills = getGroupIngredients(activeDishes, ["boucherie"]);
-    const allStarchPills = getGroupIngredients(activeDishes, ["epicerie"]);
-    const allFreshPills = getGroupIngredients(activeDishes, ["cremerie"]);
+    const allVegPills = getGroupIngredients(plannedDishes, ["legumes"]);
+    const allProtPills = getGroupIngredients(plannedDishes, ["boucherie"]);
+    const allStarchPills = getGroupIngredients(plannedDishes, ["epicerie"]);
+    const allFreshPills = getGroupIngredients(plannedDishes, ["cremerie"]);
 
     steps.push({
       stepNumber: 1,
-      title: `Mise en place & découpe (${activeDishes.length} plats)`,
+      title: `Mise en place & découpe (${plannedDishes.length} ${plannedDishes.length > 1 ? "plats" : "plat"})`,
       station: ovenDishes.length > 0 ? "Plan de travail & Préchauffage Four 200°C" : "Plan de travail",
-      durationMin: 12,
-      image: "/steps/step1_a.jpg",
-      dishBadges: activeDishes.map((d, idx) => `${DAYS_SHORT[idx]} • ${d.shortName}`),
+      durationMin: Math.max(6, plannedDishes.length * 2 + 2),
+      image: plannedDishes[0].dish.image,
+      dishBadges: plannedDishes.map(({ dish, dayIdx }) => `${DAYS_SHORT[dayIdx]} • ${dish.shortName}`),
       ingredientPills: [...allVegPills.slice(0, 4), ...allProtPills.slice(0, 2)],
       description:
         ovenDishes.length > 0
-          ? `Préchauffez le four à 200°C. Taillez les légumes (${allVegPills
-              .slice(0, 3)
-              .join(", ")}) et préparez les protéines pour vos ${activeDishes.length} recettes de la semaine.`
-          : `Taillez l'ensemble des légumes frais (${allVegPills
-              .slice(0, 3)
-              .join(", ")}) et préparez vos protéines sur le plan de travail.`,
+          ? `Préchauffez le four à 200°C. Taillez les légumes (${
+              allVegPills.length > 0 ? allVegPills.slice(0, 3).join(", ") : "selon vos recettes"
+            }) et préparez les protéines pour vos ${plannedDishes.length} recettes.`
+          : `Taillez les légumes frais (${
+              allVegPills.length > 0 ? allVegPills.slice(0, 3).join(", ") : "selon vos recettes"
+            }) et préparez vos protéines sur le plan de travail.`,
     });
 
     if (ovenDishes.length > 0) {
       const ovenIngredients = getGroupIngredients(ovenDishes, ["boucherie", "legumes"]);
       steps.push({
         stepNumber: steps.length + 1,
-        title: `Enfournement simultané (${ovenDishes.length} ${ovenDishes.length > 1 ? "plats" : "plat"} au four)`,
+        title: `Enfournement simultané (${ovenDishes.map(({ dish }) => dish.shortName).join(", ")})`,
         station: "Four 200°C Chaleur tournante",
         durationMin: 20,
-        image: "/steps/step2_a.jpg",
-        dishBadges: ovenDishes.map((d) => d.shortName),
+        image: ovenDishes[0].dish.image,
+        dishBadges: ovenDishes.map(({ dish, dayIdx }) => `${DAYS_SHORT[dayIdx]} • ${dish.shortName}`),
         ingredientPills: ovenIngredients.slice(0, 5),
         description: `Disposez sur vos plaques : ${ovenIngredients
           .slice(0, 4)
@@ -642,38 +656,46 @@ export default function MacroBatchApp() {
       });
     }
 
-    const starchAndSimmerDishes = simmerDishes.length > 0 ? simmerDishes : activeDishes;
-    steps.push({
-      stepNumber: steps.length + 1,
-      title:
+    if (simmerDishes.length > 0 || allStarchPills.length > 0) {
+      const starchTargetDishes =
         simmerDishes.length > 0
-          ? `Lancement des Féculents & Mijotés (${simmerDishes.map((d) => d.shortName).join(", ")})`
-          : "Cuisson groupée des Féculents & Céréales",
-      station: "Plaques de cuisson (Feux doux/moyen)",
-      durationMin: 16,
-      image: "/steps/step3_a.jpg",
-      dishBadges: starchAndSimmerDishes.map((d) => d.shortName),
-      ingredientPills: allStarchPills.slice(0, 5),
-      description:
-        simmerDishes.length > 0
-          ? `Lancez la cuisson des bases céréalières et laissez mijoter à couvert : ${allStarchPills
-              .slice(0, 4)
-              .join(", ")} pendant 15 à 18 minutes.`
-          : `Lancez en parallèle vos féculents de la semaine (${allStarchPills
-              .slice(0, 4)
-              .join(", ")}) dans l'eau bouillante salée puis égouttez.`,
-    });
+          ? simmerDishes
+          : plannedDishes.filter(({ dish }) =>
+              dish.ingredients.some((i) => i.aisle === "epicerie" && !i.isPantry)
+            );
+      const starchDisplayDishes = starchTargetDishes.length > 0 ? starchTargetDishes : plannedDishes;
+      steps.push({
+        stepNumber: steps.length + 1,
+        title:
+          simmerDishes.length > 0
+            ? `Féculents & Mijotés (${simmerDishes.map(({ dish }) => dish.shortName).join(", ")})`
+            : `Cuisson des Féculents (${starchDisplayDishes.map(({ dish }) => dish.shortName).join(", ")})`,
+        station: "Plaques de cuisson (Feux doux/moyen)",
+        durationMin: 16,
+        image: starchDisplayDishes[0].dish.image,
+        dishBadges: starchDisplayDishes.map(({ dish, dayIdx }) => `${DAYS_SHORT[dayIdx]} • ${dish.shortName}`),
+        ingredientPills: allStarchPills.slice(0, 5),
+        description:
+          simmerDishes.length > 0
+            ? `Lancez la cuisson des bases céréalières et laissez mijoter à couvert : ${allStarchPills
+                .slice(0, 4)
+                .join(", ")} pendant 15 à 18 minutes.`
+            : `Lancez en parallèle vos féculents (${allStarchPills
+                .slice(0, 4)
+                .join(", ")}) dans l'eau bouillante salée puis égouttez.`,
+      });
+    }
 
     const activePanOrMinute = [...panDishes, ...minuteDishes];
     if (activePanOrMinute.length > 0) {
       const panPills = getGroupIngredients(activePanOrMinute, ["boucherie", "cremerie", "legumes"]);
       steps.push({
         stepNumber: steps.length + 1,
-        title: `Saisie vive à la poêle (${activePanOrMinute.map((d) => d.shortName).join(", ")})`,
+        title: `Saisie vive à la poêle (${activePanOrMinute.map(({ dish }) => dish.shortName).join(", ")})`,
         station: "Grande Poêle / Wok feu vif",
         durationMin: 14,
-        image: "/steps/step5_a.jpg",
-        dishBadges: activePanOrMinute.map((d) => d.shortName),
+        image: activePanOrMinute[0].dish.image,
+        dishBadges: activePanOrMinute.map(({ dish, dayIdx }) => `${DAYS_SHORT[dayIdx]} • ${dish.shortName}`),
         ingredientPills: panPills.slice(0, 5),
         description: `Faites dorer à feu vif : ${panPills
           .slice(0, 4)
@@ -681,40 +703,47 @@ export default function MacroBatchApp() {
       });
     }
 
-    steps.push({
-      stepNumber: steps.length + 1,
-      title: "Préparation à froid des Sauces & Garnitures",
-      station: "Plan de travail (Sans cuisson)",
-      durationMin: 8,
-      image: "/steps/step6_a.jpg",
-      dishBadges: activeDishes.map((d) => d.shortName),
-      ingredientPills: allFreshPills.slice(0, 5),
-      description: `Préparez les sauces fraîches et bases laitières (${allFreshPills
-        .slice(0, 4)
-        .join(", ")}) dans des petits contenants hermétiques séparés pour préserver le croquant au réchauffage.`,
-    });
+    if (allFreshPills.length > 0) {
+      const freshDishes = plannedDishes.filter(({ dish }) =>
+        dish.ingredients.some((i) => i.aisle === "cremerie" && !i.isPantry)
+      );
+      steps.push({
+        stepNumber: steps.length + 1,
+        title: "Préparation à froid des Sauces & Garnitures",
+        station: "Plan de travail (Sans cuisson)",
+        durationMin: 8,
+        image: (freshDishes[0] ?? plannedDishes[0]).dish.image,
+        dishBadges: (freshDishes.length > 0 ? freshDishes : plannedDishes).map(
+          ({ dish, dayIdx }) => `${DAYS_SHORT[dayIdx]} • ${dish.shortName}`
+        ),
+        ingredientPills: allFreshPills.slice(0, 5),
+        description: `Préparez les sauces fraîches et bases laitières (${allFreshPills
+          .slice(0, 4)
+          .join(", ")}) dans des petits contenants hermétiques séparés pour préserver le croquant au réchauffage.`,
+      });
+    }
 
     steps.push({
       stepNumber: steps.length + 1,
-      title: `Assemblage des ${totalWeeklyPortions} boîtes (Lundi à Vendredi)`,
+      title: `Assemblage des ${totalWeeklyPortions} boîtes`,
       station: "Dressage & Mise au frais",
       durationMin: 10,
       image: "/steps/step7_a.jpg",
-      dishBadges: activeDishes.map(
-        (d, idx) =>
-          `${DAYS_FULL[idx]} (${(effectiveSlotPeople[idx] ?? peopleCount) * 2} port.) : ${d.shortName}`
+      dishBadges: plannedDishes.map(
+        ({ dish, dayIdx }) =>
+          `${DAYS_FULL[dayIdx]} (${(effectiveSlotPeople[dayIdx] ?? peopleCount) * 2} port.) : ${dish.shortName}`
       ),
       ingredientPills: [`${totalWeeklyPortions} repas au total`],
-      description: `Répartissez chaque recette selon vos convives : ${activeDishes
+      description: `Répartissez chaque recette selon vos convives : ${plannedDishes
         .map(
-          (d, i) =>
-            `${DAYS_SHORT[i]} ${d.shortName} (${(effectiveSlotPeople[i] ?? peopleCount) * 2} port.)`
+          ({ dish, dayIdx }) =>
+            `${DAYS_SHORT[dayIdx]} ${dish.shortName} (${(effectiveSlotPeople[dayIdx] ?? peopleCount) * 2} port.)`
         )
         .join(" • ")}. Laissez tiédir 15 min avant de fermer les couvercles.`,
     });
 
     return steps;
-  }, [activeDishes, peopleCount, effectiveSlotPeople, totalWeeklyPortions]);
+  }, [plannedDishes, peopleCount, effectiveSlotPeople, totalWeeklyPortions]);
 
   const totalBatchMinutes = useMemo(() => {
     return dynamicBatchTimeline.reduce((acc, s) => acc + s.durationMin, 0);
@@ -2099,7 +2128,7 @@ export default function MacroBatchApp() {
                     : "text-stone-600"
                 }`}
               >
-                Fiches Recettes ({activeDishes.length})
+                Fiches Recettes ({plannedDishes.length})
               </button>
             </div>
 
@@ -2109,10 +2138,10 @@ export default function MacroBatchApp() {
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-[11px] font-bold uppercase tracking-wider text-[#92400E] block">
-                        Plan d&apos;action sur-mesure
+                        {weekOffset === 0 ? "Cette semaine" : "Semaine prochaine"} • {plannedDishes.length} {plannedDishes.length > 1 ? "plats" : "plat"}
                       </span>
                       <h2 className="font-serif text-lg font-bold text-[#141414]">
-                        {dynamicBatchTimeline.length} étapes pour vos plats
+                        {dynamicBatchTimeline.length} étapes sur-mesure
                       </h2>
                     </div>
                     <span className="text-xs font-extrabold bg-[#FEF3C7] text-[#92400E] px-2.5 py-1 rounded-full font-mono-tabular">
@@ -2130,7 +2159,7 @@ export default function MacroBatchApp() {
                   </div>
 
                   <div className="flex flex-wrap gap-1.5">
-                    {Array.from(new Set(activeDishes.map((d) => d.cookMethodLabel))).map(
+                    {Array.from(new Set(plannedDishes.map(({ dish }) => dish.cookMethodLabel))).map(
                       (station) => (
                         <span
                           key={station}
@@ -2229,12 +2258,12 @@ export default function MacroBatchApp() {
               </div>
             ) : (
               <div className="space-y-4">
-                {activeDishes.map((dish, idx) => {
-                  const dayPeople = effectiveSlotPeople[idx] ?? peopleCount;
+                {plannedDishes.map(({ dish, dayIdx }) => {
+                  const dayPeople = effectiveSlotPeople[dayIdx] ?? peopleCount;
                   const dayPortions = dayPeople * 2;
                   return (
                   <article
-                    key={`${dish.id}-${idx}`}
+                    key={`${dish.id}-${dayIdx}`}
                     className="bg-white rounded-3xl overflow-hidden border border-[#EDE8E0]"
                   >
                     <div className="relative aspect-video bg-stone-100">
@@ -2245,7 +2274,7 @@ export default function MacroBatchApp() {
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute top-3 left-3 bg-[#141414]/85 text-white text-xs font-bold px-2.5 py-1 rounded-full">
-                        {DAYS_FULL[idx]} • {dayPeople}P
+                        {DAYS_FULL[dayIdx]} • {dayPeople}P
                       </div>
                     </div>
 
@@ -2257,6 +2286,9 @@ export default function MacroBatchApp() {
                         <h3 className="font-serif text-base font-bold text-[#141414] mt-0.5">
                           {dish.name}
                         </h3>
+                        <p className="text-xs text-stone-600 mt-1 leading-relaxed">
+                          {dish.desc}
+                        </p>
                       </div>
 
                       <div className="bg-[#FAF8F5] rounded-2xl p-3 space-y-1.5 border border-[#EDE8E0]">
