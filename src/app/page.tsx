@@ -208,6 +208,7 @@ export default function MacroBatchApp() {
     { id: string; name: string; checked: boolean }[]
   >([]);
   const [newCartItemText, setNewCartItemText] = useState<string>("");
+  const [hideCheckedCart, setHideCheckedCart] = useState<boolean>(false);
   const [quickSwapDayIdx, setQuickSwapDayIdx] = useState<number | null>(null);
   const [supermarket, setSupermarket] = useState<SupermarketKey>("leclerc");
   const [skillLevel, setSkillLevel] = useState<SkillLevel>("facile");
@@ -1313,6 +1314,72 @@ export default function MacroBatchApp() {
               </section>
             )}
 
+            {/* Carrousel horizontal d'inspirations (style Zest / Jow) */}
+            <section className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h3 className="font-serif text-lg font-bold text-[#1C1917]">
+                  {totalStockCount > 0 ? "Idées avec ton stock" : "Inspirations du moment"}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsCatalogOpen(true)}
+                  className="text-xs font-bold text-[#92400E] hover:underline cursor-pointer"
+                >
+                  Tout voir →
+                </button>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x snap-mandatory">
+                {filteredCatalog.slice(0, 6).map((recipe) => {
+                  const matches = getRecipeStockMatches(recipe);
+                  const isFav = favoriteIds.includes(recipe.id);
+                  return (
+                    <article
+                      key={recipe.id}
+                      onClick={() => setSelectedRecipe(recipe)}
+                      className="w-40 shrink-0 snap-start bg-white rounded-3xl overflow-hidden border border-[#EDE8E0] shadow-2xs cursor-pointer tap-scale"
+                    >
+                      <div className="relative aspect-[4/3] bg-stone-100">
+                        <img
+                          src={recipe.image}
+                          alt={recipe.shortName}
+                          loading="lazy"
+                          className="w-full h-full object-cover"
+                        />
+                        {matches.length > 0 && (
+                          <span className="absolute top-2 left-2 bg-[#059669] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            {matches.length} en stock
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(recipe.id);
+                          }}
+                          aria-label="Favori"
+                          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/95 flex items-center justify-center shadow-2xs cursor-pointer"
+                        >
+                          <Heart
+                            className={`w-3.5 h-3.5 ${
+                              isFav ? "fill-[#FF5A36] text-[#FF5A36]" : "text-[#141414]"
+                            }`}
+                          />
+                        </button>
+                      </div>
+                      <div className="p-2.5">
+                        <h4 className="text-xs font-bold text-[#141414] truncate">
+                          {recipe.shortName}
+                        </h4>
+                        <p className="text-[11px] text-stone-500 mt-0.5 font-mono-tabular">
+                          {getDishProtein(recipe)}g prot • {(recipe.cost[budgetTier] * supermarketMult).toFixed(2).replace(".", ",")} €
+                        </p>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+
             {/* Garde-manger / À consommer vite */}
             <section className="space-y-2.5">
               <div className="flex items-center justify-between">
@@ -1784,6 +1851,27 @@ export default function MacroBatchApp() {
                 >
                   {deductPantry ? "Épices déduites" : "Avec épices"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setHideCheckedCart((prev) => !prev)}
+                  className={`tap-scale px-3 py-1.5 rounded-full text-xs font-bold border cursor-pointer ${
+                    hideCheckedCart
+                      ? "bg-[#141414] text-white border-[#141414]"
+                      : "bg-[#FAF8F5] text-stone-600 border-[#EDE8E0]"
+                  }`}
+                >
+                  {hideCheckedCart ? "Voir tout" : "Masquer cochés"}
+                </button>
+              </div>
+
+              {/* Barre de progression caddie */}
+              <div className="h-1.5 rounded-full bg-[#FAF8F5] overflow-hidden border border-[#EDE8E0]/60">
+                <div
+                  className="h-full rounded-full bg-[#059669] transition-all"
+                  style={{
+                    width: `${totalGroceryCount > 0 ? Math.min(100, Math.round((totalCheckedCount / totalGroceryCount) * 100)) : 0}%`,
+                  }}
+                />
               </div>
             </div>
 
@@ -1825,7 +1913,9 @@ export default function MacroBatchApp() {
                   </span>
                 </div>
                 <div className="divide-y divide-[#EDE8E0]/60">
-                  {customCartItems.map((item) => (
+                  {customCartItems
+                    .filter((item) => !hideCheckedCart || !item.checked)
+                    .map((item) => (
                     <div
                       key={item.id}
                       className="px-4 py-3 flex items-center justify-between gap-2"
@@ -1875,7 +1965,12 @@ export default function MacroBatchApp() {
             )}
 
             <div className="space-y-4">
-              {groceryByAisle.map((group) => (
+              {groceryByAisle.map((group) => {
+                const visibleItems = hideCheckedCart
+                  ? group.items.filter((item) => !checkedGroceries[`${group.aisle}-${item.name}`])
+                  : group.items;
+                if (visibleItems.length === 0) return null;
+                return (
                 <section
                   key={group.aisle}
                   className="bg-white rounded-3xl border border-[#EDE8E0] overflow-hidden"
@@ -1885,12 +1980,12 @@ export default function MacroBatchApp() {
                       {group.label}
                     </h3>
                     <span className="text-xs font-bold text-stone-400">
-                      {group.items.length}
+                      {visibleItems.length}
                     </span>
                   </div>
 
                   <div className="divide-y divide-[#EDE8E0]/60">
-                    {group.items.map((item) => {
+                    {visibleItems.map((item) => {
                       const key = `${group.aisle}-${item.name}`;
                       const isChecked = Boolean(checkedGroceries[key]);
                       const fromStock = isIngredientInStock(item.name);
@@ -1942,7 +2037,8 @@ export default function MacroBatchApp() {
                     })}
                   </div>
                 </section>
-              ))}
+                );
+              })}
             </div>
           </main>
         )}
@@ -1951,15 +2047,15 @@ export default function MacroBatchApp() {
             TAB 4: PRÉPARATION DYNAMIQUE (ADAPTÉE AUX 5 PLATS CHOISIS)
             ================================================================ */}
         {tab === "prep" && (
-          <main className="px-4 pt-3 space-y-4">
-            <div className="bg-slate-200/70 p-1 rounded-2xl flex">
+          <main className="px-4 pt-4 space-y-4">
+            <div className="bg-[#EDE8E0]/70 p-1 rounded-2xl flex">
               <button
                 type="button"
                 onClick={() => setPrepMode("batch")}
                 className={`flex-1 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all ${
                   prepMode === "batch"
-                    ? "bg-white text-[#0F172A] shadow-xs"
-                    : "text-slate-600"
+                    ? "bg-white text-[#141414] shadow-2xs"
+                    : "text-stone-600"
                 }`}
               >
                 Session Batch ({totalBatchMinutes} min)
@@ -1969,37 +2065,46 @@ export default function MacroBatchApp() {
                 onClick={() => setPrepMode("recipes")}
                 className={`flex-1 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all ${
                   prepMode === "recipes"
-                    ? "bg-white text-[#0F172A] shadow-xs"
-                    : "text-slate-600"
+                    ? "bg-white text-[#141414] shadow-2xs"
+                    : "text-stone-600"
                 }`}
               >
-                Fiches Recettes (5)
+                Fiches Recettes ({activeDishes.length})
               </button>
             </div>
 
             {prepMode === "batch" ? (
               <div className="space-y-4">
-                <div className="bg-white rounded-2xl p-4 border border-slate-200/80 space-y-2.5">
+                <div className="bg-white rounded-3xl p-4 border border-[#EDE8E0] space-y-3 shadow-2xs">
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#FF5A36] block">
-                        Plan d'action sur-mesure
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#92400E] block">
+                        Plan d&apos;action sur-mesure
                       </span>
-                      <h2 className="text-base font-extrabold text-[#0F172A]">
-                        {dynamicBatchTimeline.length} étapes pour vos 5 plats
+                      <h2 className="font-serif text-lg font-bold text-[#141414]">
+                        {dynamicBatchTimeline.length} étapes pour vos plats
                       </h2>
                     </div>
-                    <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full">
+                    <span className="text-xs font-extrabold bg-[#FEF3C7] text-[#92400E] px-2.5 py-1 rounded-full font-mono-tabular">
                       {doneStepsCount} / {dynamicBatchTimeline.length}
                     </span>
                   </div>
 
-                  <div className="flex flex-wrap gap-1.5 pt-1">
+                  <div className="h-1.5 rounded-full bg-[#FAF8F5] overflow-hidden border border-[#EDE8E0]/60">
+                    <div
+                      className="h-full rounded-full bg-[#059669] transition-all"
+                      style={{
+                        width: `${dynamicBatchTimeline.length > 0 ? Math.min(100, Math.round((doneStepsCount / dynamicBatchTimeline.length) * 100)) : 0}%`,
+                      }}
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
                     {Array.from(new Set(activeDishes.map((d) => d.cookMethodLabel))).map(
                       (station) => (
                         <span
                           key={station}
-                          className="text-[11px] font-bold bg-[#FFF1EE] text-[#FF5A36] px-2.5 py-1 rounded-lg"
+                          className="text-[11px] font-bold bg-[#FEF3C7]/70 text-[#92400E] px-2.5 py-1 rounded-lg"
                         >
                           {station}
                         </span>
@@ -2013,19 +2118,19 @@ export default function MacroBatchApp() {
                   return (
                     <article
                       key={step.stepNumber}
-                      className={`bg-white rounded-3xl overflow-hidden border border-slate-200/80 transition-opacity ${
+                      className={`bg-white rounded-3xl overflow-hidden border border-[#EDE8E0] transition-opacity ${
                         isDone ? "opacity-55" : ""
                       }`}
                     >
-                      <div className="relative aspect-video bg-slate-900">
+                      <div className="relative aspect-video bg-stone-900">
                         <img
                           src={step.image}
                           alt={step.title}
                           loading="lazy"
                           className="w-full h-full object-cover"
                         />
-                        <div className="absolute top-3 left-3 bg-[#0F172A]/85 backdrop-blur-xs text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-[#FF5A36]" />
+                        <div className="absolute top-3 left-3 bg-[#141414]/85 backdrop-blur-xs text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-[#F5B731]" />
                           <span>
                             Étape {step.stepNumber}/{dynamicBatchTimeline.length} •{" "}
                             {step.durationMin} min
@@ -2035,10 +2140,10 @@ export default function MacroBatchApp() {
 
                       <div className="p-4 space-y-3">
                         <div>
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">
                             {step.station}
                           </span>
-                          <h3 className="text-sm font-extrabold text-[#0F172A] mt-0.5">
+                          <h3 className="font-serif text-base font-bold text-[#141414] mt-0.5">
                             {step.title}
                           </h3>
                         </div>
@@ -2047,23 +2152,23 @@ export default function MacroBatchApp() {
                           {step.dishBadges.map((b, i) => (
                             <span
                               key={i}
-                              className="text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md"
+                              className="text-[11px] font-bold bg-[#FAF8F5] border border-[#EDE8E0] text-stone-700 px-2 py-0.5 rounded-md"
                             >
                               {b}
                             </span>
                           ))}
                         </div>
 
-                        <p className="text-xs text-slate-600 leading-relaxed">
+                        <p className="text-xs text-stone-600 leading-relaxed">
                           {step.description}
                         </p>
 
                         {step.ingredientPills.length > 0 && (
-                          <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 flex flex-wrap gap-1.5">
+                          <div className="bg-[#FAF8F5] rounded-2xl p-2.5 border border-[#EDE8E0] flex flex-wrap gap-1.5">
                             {step.ingredientPills.map((pill, i) => (
                               <span
                                 key={i}
-                                className="text-[11px] font-semibold bg-white text-[#0F172A] px-2 py-0.5 rounded-md border border-slate-200/80 font-mono-tabular"
+                                className="text-[11px] font-semibold bg-white text-[#141414] px-2 py-0.5 rounded-md border border-[#EDE8E0] font-mono-tabular"
                               >
                                 {pill}
                               </span>
@@ -2079,13 +2184,13 @@ export default function MacroBatchApp() {
                               [step.stepNumber]: !prev[step.stepNumber],
                             }))
                           }
-                          className={`tap-scale w-full py-2.5 rounded-xl text-xs font-bold cursor-pointer ${
+                          className={`tap-scale w-full py-3 rounded-2xl text-xs font-bold cursor-pointer ${
                             isDone
                               ? "bg-[#059669] text-white"
-                              : "bg-slate-100 text-[#0F172A] hover:bg-slate-200"
+                              : "bg-[#141414] text-white"
                           }`}
                         >
-                          {isDone ? "Étape terminée" : "Marquer comme fait"}
+                          {isDone ? "Étape terminée ✓" : "Marquer comme fait"}
                         </button>
                       </div>
                     </article>
@@ -2100,38 +2205,38 @@ export default function MacroBatchApp() {
                   return (
                   <article
                     key={`${dish.id}-${idx}`}
-                    className="bg-white rounded-3xl overflow-hidden border border-slate-200/80"
+                    className="bg-white rounded-3xl overflow-hidden border border-[#EDE8E0]"
                   >
-                    <div className="relative aspect-video bg-slate-100">
+                    <div className="relative aspect-video bg-stone-100">
                       <img
                         src={dish.image}
                         alt={dish.name}
                         loading="lazy"
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute top-3 left-3 bg-[#0F172A]/85 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                      <div className="absolute top-3 left-3 bg-[#141414]/85 text-white text-xs font-bold px-2.5 py-1 rounded-full">
                         {DAYS_FULL[idx]} • {dayPeople}P
                       </div>
                     </div>
 
                     <div className="p-4 space-y-3">
                       <div>
-                        <span className="text-[11px] font-bold uppercase text-slate-400">
+                        <span className="text-[11px] font-bold uppercase text-stone-400">
                           {dish.cookMethodLabel} • {dayPortions} portions ({dayPeople} pers.)
                         </span>
-                        <h3 className="text-base font-extrabold text-[#0F172A] mt-0.5">
+                        <h3 className="font-serif text-base font-bold text-[#141414] mt-0.5">
                           {dish.name}
                         </h3>
                       </div>
 
-                      <div className="bg-slate-50 rounded-2xl p-3 space-y-1.5 border border-slate-100">
+                      <div className="bg-[#FAF8F5] rounded-2xl p-3 space-y-1.5 border border-[#EDE8E0]">
                         {dish.ingredients.map((ing, iIdx) => (
                           <div
                             key={iIdx}
                             className="flex items-center justify-between text-xs"
                           >
-                            <span className="text-slate-700">{ing.name}</span>
-                            <strong className="font-bold text-[#0F172A] font-mono-tabular">
+                            <span className="text-stone-700">{ing.name}</span>
+                            <strong className="font-bold text-[#141414] font-mono-tabular">
                               {formatQty(ing.qty * dayPortions, ing.unit)}
                             </strong>
                           </div>
