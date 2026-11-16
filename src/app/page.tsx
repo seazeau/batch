@@ -33,6 +33,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { RECIPE_DATABASE, Recipe, SupermarketAisle } from "@/data/recipeDatabase";
+import { RECIPE_COOKING_STEPS } from "@/data/recipeSteps";
 
 type TabKey = "home" | "menu" | "cart" | "prep";
 type DietMode = "omni" | "vege" | "pesco";
@@ -111,6 +112,7 @@ interface DynamicBatchStep {
   dishBadges: string[];
   ingredientPills: string[];
   description: string;
+  dishInstructions?: { dishName: string; dayLabel: string; text: string }[];
 }
 
 export default function MacroBatchApp() {
@@ -617,45 +619,59 @@ export default function MacroBatchApp() {
       return Array.from(map.values()).map((x) => `${x.name} (${formatQty(x.qty, x.unit)})`);
     };
 
+    const getStepGuide = (dish: Recipe) =>
+      RECIPE_COOKING_STEPS[dish.id] ?? {
+        prep: dish.desc,
+        cook: `Cuisez selon le mode ${dish.cookMethodLabel.toLowerCase()}.`,
+        finish: dish.assemblyTip,
+      };
+
     const allVegPills = getGroupIngredients(plannedDishes, ["legumes"]);
     const allProtPills = getGroupIngredients(plannedDishes, ["boucherie"]);
     const allStarchPills = getGroupIngredients(plannedDishes, ["epicerie"]);
     const allFreshPills = getGroupIngredients(plannedDishes, ["cremerie"]);
 
+    // 1. Mise en place (exact prep per chosen recipe)
     steps.push({
       stepNumber: 1,
       title: `Mise en place & découpe (${plannedDishes.length} ${plannedDishes.length > 1 ? "plats" : "plat"})`,
       station: ovenDishes.length > 0 ? "Plan de travail & Préchauffage Four 200°C" : "Plan de travail",
       durationMin: Math.max(6, plannedDishes.length * 2 + 2),
-      image: plannedDishes[0].dish.image,
+      image: "/steps/step1_a.jpg",
       dishBadges: plannedDishes.map(({ dish, dayIdx }) => `${DAYS_SHORT[dayIdx]} • ${dish.shortName}`),
       ingredientPills: [...allVegPills.slice(0, 4), ...allProtPills.slice(0, 2)],
       description:
         ovenDishes.length > 0
-          ? `Préchauffez le four à 200°C. Taillez les légumes (${
-              allVegPills.length > 0 ? allVegPills.slice(0, 3).join(", ") : "selon vos recettes"
-            }) et préparez les protéines pour vos ${plannedDishes.length} recettes.`
-          : `Taillez les légumes frais (${
-              allVegPills.length > 0 ? allVegPills.slice(0, 3).join(", ") : "selon vos recettes"
-            }) et préparez vos protéines sur le plan de travail.`,
+          ? "Préchauffez le four à 200°C et préparez chaque base en série avant de lancer les cuissons :"
+          : "Préparez chaque ingrédient et marinade en série avant de lancer les cuissons :",
+      dishInstructions: plannedDishes.map(({ dish, dayIdx }) => ({
+        dishName: dish.shortName,
+        dayLabel: DAYS_SHORT[dayIdx],
+        text: getStepGuide(dish).prep,
+      })),
     });
 
+    // 2. Four (exact oven instructions per oven dish)
     if (ovenDishes.length > 0) {
       const ovenIngredients = getGroupIngredients(ovenDishes, ["boucherie", "legumes"]);
       steps.push({
         stepNumber: steps.length + 1,
-        title: `Enfournement simultané (${ovenDishes.map(({ dish }) => dish.shortName).join(", ")})`,
+        title: `Cuisson au four (${ovenDishes.map(({ dish }) => dish.shortName).join(", ")})`,
         station: "Four 200°C Chaleur tournante",
         durationMin: 20,
-        image: ovenDishes[0].dish.image,
+        image: "/steps/step2_a.jpg",
         dishBadges: ovenDishes.map(({ dish, dayIdx }) => `${DAYS_SHORT[dayIdx]} • ${dish.shortName}`),
         ingredientPills: ovenIngredients.slice(0, 5),
-        description: `Disposez sur vos plaques : ${ovenIngredients
-          .slice(0, 4)
-          .join(", ")}. Arrosez d'un filet d'huile d'olive, assaisonnez et enfournez pour 20 à 25 minutes jusqu'à belle coloration.`,
+        description: "Enfournez vos plaques en parallèle :",
+        dishInstructions: ovenDishes.map(({ dish, dayIdx }) => ({
+          dishName: dish.shortName,
+          dayLabel: DAYS_SHORT[dayIdx],
+          text: getStepGuide(dish).cook,
+        })),
       });
     }
 
+    // 3. Mijotés & Féculents
     if (simmerDishes.length > 0 || allStarchPills.length > 0) {
       const starchTargetDishes =
         simmerDishes.length > 0
@@ -668,78 +684,74 @@ export default function MacroBatchApp() {
         stepNumber: steps.length + 1,
         title:
           simmerDishes.length > 0
-            ? `Féculents & Mijotés (${simmerDishes.map(({ dish }) => dish.shortName).join(", ")})`
+            ? `Mijotés & Féculents (${simmerDishes.map(({ dish }) => dish.shortName).join(", ")})`
             : `Cuisson des Féculents (${starchDisplayDishes.map(({ dish }) => dish.shortName).join(", ")})`,
         station: "Plaques de cuisson (Feux doux/moyen)",
         durationMin: 16,
-        image: starchDisplayDishes[0].dish.image,
+        image: "/steps/step3_a.jpg",
         dishBadges: starchDisplayDishes.map(({ dish, dayIdx }) => `${DAYS_SHORT[dayIdx]} • ${dish.shortName}`),
         ingredientPills: allStarchPills.slice(0, 5),
         description:
           simmerDishes.length > 0
-            ? `Lancez la cuisson des bases céréalières et laissez mijoter à couvert : ${allStarchPills
-                .slice(0, 4)
-                .join(", ")} pendant 15 à 18 minutes.`
-            : `Lancez en parallèle vos féculents (${allStarchPills
-                .slice(0, 4)
-                .join(", ")}) dans l'eau bouillante salée puis égouttez.`,
+            ? "Lancez vos mijotés et bases céréalières sur les plaques :"
+            : "Lancez vos féculents et céréales en parallèle pendant les autres cuissons :",
+        dishInstructions:
+          simmerDishes.length > 0
+            ? simmerDishes.map(({ dish, dayIdx }) => ({
+                dishName: dish.shortName,
+                dayLabel: DAYS_SHORT[dayIdx],
+                text: getStepGuide(dish).cook,
+              }))
+            : starchDisplayDishes.map(({ dish, dayIdx }) => ({
+                dishName: dish.shortName,
+                dayLabel: DAYS_SHORT[dayIdx],
+                text: `Cuisez les féculents (${getGroupIngredients([{ dish, dayIdx }], ["epicerie"]).join(", ") || "base"}) puis égouttez.`,
+              })),
       });
     }
 
+    // 4. Poêle / Wok / Minute
     const activePanOrMinute = [...panDishes, ...minuteDishes];
     if (activePanOrMinute.length > 0) {
       const panPills = getGroupIngredients(activePanOrMinute, ["boucherie", "cremerie", "legumes"]);
       steps.push({
         stepNumber: steps.length + 1,
-        title: `Saisie vive à la poêle (${activePanOrMinute.map(({ dish }) => dish.shortName).join(", ")})`,
-        station: "Grande Poêle / Wok feu vif",
+        title: `Poêle & Assemblage minute (${activePanOrMinute.map(({ dish }) => dish.shortName).join(", ")})`,
+        station: "Grande Poêle / Wok",
         durationMin: 14,
-        image: activePanOrMinute[0].dish.image,
+        image: "/steps/step5_a.jpg",
         dishBadges: activePanOrMinute.map(({ dish, dayIdx }) => `${DAYS_SHORT[dayIdx]} • ${dish.shortName}`),
         ingredientPills: panPills.slice(0, 5),
-        description: `Faites dorer à feu vif : ${panPills
-          .slice(0, 4)
-          .join(", ")} pendant 6 à 8 minutes par fournée pour caraméliser les sucs tout en gardant le cœur moelleux.`,
+        description: "Enchaînez ces préparations à la poêle ou à froid :",
+        dishInstructions: activePanOrMinute.map(({ dish, dayIdx }) => ({
+          dishName: dish.shortName,
+          dayLabel: DAYS_SHORT[dayIdx],
+          text: getStepGuide(dish).cook,
+        })),
       });
     }
 
-    if (allFreshPills.length > 0) {
-      const freshDishes = plannedDishes.filter(({ dish }) =>
-        dish.ingredients.some((i) => i.aisle === "cremerie" && !i.isPantry)
-      );
-      steps.push({
-        stepNumber: steps.length + 1,
-        title: "Préparation à froid des Sauces & Garnitures",
-        station: "Plan de travail (Sans cuisson)",
-        durationMin: 8,
-        image: (freshDishes[0] ?? plannedDishes[0]).dish.image,
-        dishBadges: (freshDishes.length > 0 ? freshDishes : plannedDishes).map(
-          ({ dish, dayIdx }) => `${DAYS_SHORT[dayIdx]} • ${dish.shortName}`
-        ),
-        ingredientPills: allFreshPills.slice(0, 5),
-        description: `Préparez les sauces fraîches et bases laitières (${allFreshPills
-          .slice(0, 4)
-          .join(", ")}) dans des petits contenants hermétiques séparés pour préserver le croquant au réchauffage.`,
-      });
-    }
-
+    // 5. Sauces, finitions & mise en boîtes
     steps.push({
       stepNumber: steps.length + 1,
-      title: `Assemblage des ${totalWeeklyPortions} boîtes`,
-      station: "Dressage & Mise au frais",
+      title: `Finitions & Mise en ${totalWeeklyPortions} boîtes`,
+      station: "Sauces, Dressage & Conservation",
       durationMin: 10,
       image: "/steps/step7_a.jpg",
       dishBadges: plannedDishes.map(
         ({ dish, dayIdx }) =>
           `${DAYS_FULL[dayIdx]} (${(effectiveSlotPeople[dayIdx] ?? peopleCount) * 2} port.) : ${dish.shortName}`
       ),
-      ingredientPills: [`${totalWeeklyPortions} repas au total`],
-      description: `Répartissez chaque recette selon vos convives : ${plannedDishes
-        .map(
-          ({ dish, dayIdx }) =>
-            `${DAYS_SHORT[dayIdx]} ${dish.shortName} (${(effectiveSlotPeople[dayIdx] ?? peopleCount) * 2} port.)`
-        )
-        .join(" • ")}. Laissez tiédir 15 min avant de fermer les couvercles.`,
+      ingredientPills: [
+        ...allFreshPills.slice(0, 3),
+        `${totalWeeklyPortions} repas au total`,
+      ],
+      description: "Finalisez chaque recette et répartissez dans vos contenants :",
+      dishInstructions: plannedDishes.map(({ dish, dayIdx }) => ({
+        dishName: `${dish.shortName} (${(effectiveSlotPeople[dayIdx] ?? peopleCount) * 2} port.)`,
+        dayLabel: DAYS_SHORT[dayIdx],
+        text: `${getStepGuide(dish).finish} — ${dish.assemblyTip}`,
+      })),
     });
 
     return steps;
@@ -2222,6 +2234,24 @@ export default function MacroBatchApp() {
                           {step.description}
                         </p>
 
+                        {step.dishInstructions && step.dishInstructions.length > 0 && (
+                          <div className="space-y-2">
+                            {step.dishInstructions.map((inst, i) => (
+                              <div
+                                key={i}
+                                className="bg-[#FAF8F5] rounded-2xl p-3 border border-[#EDE8E0] space-y-0.5"
+                              >
+                                <span className="text-[11px] font-extrabold text-[#92400E] block">
+                                  {inst.dayLabel} • {inst.dishName}
+                                </span>
+                                <p className="text-xs text-[#141414] leading-relaxed">
+                                  {inst.text}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         {step.ingredientPills.length > 0 && (
                           <div className="bg-[#FAF8F5] rounded-2xl p-2.5 border border-[#EDE8E0] flex flex-wrap gap-1.5">
                             {step.ingredientPills.map((pill, i) => (
@@ -2304,6 +2334,26 @@ export default function MacroBatchApp() {
                           </div>
                         ))}
                       </div>
+
+                      {RECIPE_COOKING_STEPS[dish.id] && (
+                        <div className="space-y-2">
+                          {[
+                            { label: "1. Préparation", text: RECIPE_COOKING_STEPS[dish.id].prep },
+                            { label: "2. Cuisson", text: RECIPE_COOKING_STEPS[dish.id].cook },
+                            { label: "3. Finition", text: RECIPE_COOKING_STEPS[dish.id].finish },
+                          ].map((s, sIdx) => (
+                            <div
+                              key={sIdx}
+                              className="bg-white border border-[#EDE8E0] rounded-2xl p-3 space-y-0.5"
+                            >
+                              <span className="text-[11px] font-extrabold text-[#92400E] block">
+                                {s.label}
+                              </span>
+                              <p className="text-xs text-[#141414] leading-relaxed">{s.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                       <div className="bg-[#ECFDF5] text-[#065F46] text-xs p-3 rounded-2xl leading-relaxed">
                         <strong className="font-bold block mb-0.5">
